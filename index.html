@@ -3,1401 +3,1336 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>청아빌라 야간 보안 시스템 v1.08</title>
+    <title>엄마의 감시 속에서 - 방탈출 시뮬레이션</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Fonts (Inter & Noto Sans KR, Monospace) -->
-    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Noto+Sans+KR:wght@300;400;700;900&display=swap" rel="stylesheet">
-    <!-- FontAwesome for Icons -->
+    <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+    <!-- Google Fonts: Inter & Nanum Gothic -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Nanum+Gothic:wght@400;700;800&display=swap" rel="stylesheet">
+    <!-- Tone.js for Sound Synthesis -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     <style>
         body {
-            font-family: 'Noto Sans KR', 'Fira Code', monospace;
-            background-color: #030708;
-            overflow-x: hidden;
+            font-family: 'Nanum Gothic', 'Inter', sans-serif;
+            background-color: #0b0f19;
+            color: #f3f4f6;
         }
-        
-        /* CRT 모니터 효과 */
-        .crt-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-            background-size: 100% 4px, 6px 100%;
-            z-index: 999;
-            pointer-events: none;
-        }
-
-        .crt-glow {
-            text-shadow: 0 0 4px rgba(34, 197, 94, 0.6);
-        }
-
-        .crt-glow-amber {
-            text-shadow: 0 0 4px rgba(245, 158, 11, 0.6);
-        }
-
-        .crt-glow-red {
-            text-shadow: 0 0 6px rgba(239, 68, 68, 0.8);
-        }
-
-        /* 미세한 화면 흔들림 / 글리치 */
-        @keyframes glitch {
-            0% { transform: translate(0) }
-            20% { transform: translate(-1px, 1px) }
-            40% { transform: translate(-1px, -1px) }
-            60% { transform: translate(1px, 1px) }
-            80% { transform: translate(1px, -1px) }
-            100% { transform: translate(0) }
-        }
-
-        .glitch-active {
-            animation: glitch 0.15s infinite;
-        }
-
-        /* 스캔라인 효과 */
-        @keyframes scanline {
-            0% { transform: translateY(-100%); }
-            100% { transform: translateY(100%); }
-        }
-        .scanline-bar {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100px;
-            background: linear-gradient(to bottom, transparent, rgba(34, 197, 94, 0.08), transparent);
-            animation: scanline 8s linear infinite;
-            pointer-events: none;
-        }
-
-        /* 커스텀 스크롤바 */
+        /* Custom scrollbar */
         ::-webkit-scrollbar {
             width: 6px;
         }
         ::-webkit-scrollbar-track {
-            background: #090d0f;
+            background: #111827;
         }
         ::-webkit-scrollbar-thumb {
-            background: #16a34a;
+            background: #374151;
             border-radius: 3px;
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: #22c55e;
+            background: #4b5563;
         }
-
-        /* 네온 펄스 */
-        @keyframes pulse-border {
-            0%, 100% { border-color: rgba(34, 197, 94, 0.3); }
-            50% { border-color: rgba(34, 197, 94, 0.8); }
+        /* Pulse animations for alerts */
+        @keyframes redPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            50% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
         }
-        .pulse-border-green {
-            animation: pulse-border 2s infinite;
+        .pulse-red {
+            animation: redPulse 1.5s infinite;
+        }
+        @keyframes scanline {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(100%); }
+        }
+        .scanline::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,0,0,0.1) 10%, rgba(255,255,255,0) 20%);
+            animation: scanline 6s linear infinite;
+            pointer-events: none;
         }
     </style>
 </head>
-<body class="text-emerald-400 select-none antialiased">
+<body class="min-h-screen flex flex-col justify-between overflow-x-hidden relative scanline">
 
-    <!-- CRT 주사선 & 글리치 오버레이 -->
-    <div class="crt-overlay"></div>
-    <div id="glitch-wrapper" class="w-full min-h-screen flex flex-col justify-between relative overflow-hidden p-4 md:p-6">
-        <div class="scanline-bar"></div>
 
-        <!-- ================= BOOT SCREEN (시작 화면) ================= -->
-        <div id="boot-screen" class="fixed inset-0 bg-[#020506] z-50 flex flex-col items-center justify-center p-6 text-emerald-500">
-            <div class="max-w-xl w-full border border-emerald-900 bg-[#040a0c]/95 p-8 rounded-lg shadow-2xl relative">
-                <div class="absolute top-2 right-3 text-xs text-emerald-700 font-mono">SECURE_BOOT_v1.08</div>
-                
-                <h1 class="text-2xl font-black mb-4 crt-glow tracking-widest text-center flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-terminal animate-pulse"></i> 청아빌라 야간 보안 시스템
-                </h1>
-                
-                <div class="font-mono text-xs space-y-2 mb-6 text-emerald-600 bg-black/50 p-4 rounded border border-emerald-950 max-h-48 overflow-y-auto">
-                    <p>&gt; SYSTEM INITIALIZATION...</p>
-                    <p>&gt; LOADING CORE_MODULES: OK</p>
-                    <p>&gt; CONFIGURING AUDIO SYNTHESIZER... OK</p>
-                    <p>&gt; CONNECTING INTERNAL NETWORKS... OK</p>
-                    <p class="text-yellow-600">&gt; WARNING: 4 ANOMALOUS FREQUENCIES DETECTED IN THE AREA</p>
-                    <p class="text-yellow-600">&gt; NOTE: ALWAYS COMPLY WITH THE NIGHT OPERATIONS PROTOCOL</p>
-                    <p>&gt; OPERATOR ID: UNASSIGNED_NIGHT_WATCH</p>
-                    <p class="text-emerald-400 animate-pulse">&gt; STATUS: READY TO BOOT</p>
-                </div>
-
-                <div class="space-y-4 text-sm text-zinc-400 leading-relaxed">
-                    <p class="text-zinc-300">
-                        <strong class="text-emerald-400">청아빌라 야간 보안 관리실</strong>에 오신 것을 환영합니다.<br>
-                        당신의 근무 시간은 오늘 밤 <span class="text-yellow-500 font-bold">오전 00:00부터 오전 06:00</span>까지입니다.
-                    </p>
-                    <p class="text-xs text-zinc-500">
-                        * 주의: 최근 입주민들로부터 복도 및 엘리베이터 내의 "원인을 알 수 없는 현상"에 대한 민원이 다수 접수되었습니다. 관리소에서 하달하는 <span class="text-emerald-400 font-semibold">[야간 수칙]</span>을 엄격히 준수하여 무사히 근무를 마치십시오.
-                    </p>
-                    <p class="text-xs text-red-500 font-bold">
-                        * 오디오 장치가 포함된 시스템입니다. 소리를 켜고 플레이하시는 것을 적극 권장합니다. (사운드 합성 기능 포함)
-                    </p>
-                </div>
-
-                <div class="mt-8 text-center">
-                    <button id="btn-boot" class="px-8 py-3 bg-emerald-950 hover:bg-emerald-800 text-emerald-300 border border-emerald-500 rounded font-bold tracking-wider hover:shadow-[0_0_15px_rgba(34,197,94,0.4)] transition-all duration-300 w-full active:scale-95">
-                        시스템 기동 및 오디오 활성화
-                    </button>
-                </div>
+<!-- Top HUD Header -->
+<header class="bg-gray-900 border-b border-red-900/40 p-4 sticky top-0 z-40 shadow-lg">
+    <div class="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+            <div class="bg-red-600 text-white p-2 rounded-lg font-bold flex items-center justify-center pulse-red">
+                <i class="fa-solid fa-eye-slash text-lg"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-extrabold tracking-wider text-red-500">엄마의 감시 피하기</h1>
+                <p class="text-xs text-gray-400">Silent Escape Room Simulator</p>
             </div>
         </div>
 
-        <!-- ================= GAME PLAY INTERFACE ================= -->
-        
-        <!-- 1. TOP HEADER STATUS BAR -->
-        <header class="border border-emerald-900 bg-[#050b0c]/90 rounded-lg p-3 flex flex-wrap items-center justify-between gap-4 mb-3">
-            <div class="flex items-center gap-3">
-                <span class="relative flex h-3 w-3">
-                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                </span>
-                <div>
-                    <h1 class="text-sm font-bold tracking-wider crt-glow">청아빌라 관리소 <span class="text-xs text-emerald-600">v1.08-sys</span></h1>
-                    <p class="text-[10px] text-emerald-600 font-mono">OP_ID: WG-2026-NIGHT</p>
-                </div>
+        <!-- Stats Panel -->
+        <div class="flex flex-wrap items-center gap-6 text-sm bg-gray-950 p-2 px-4 rounded-xl border border-gray-800">
+            <!-- Time -->
+            <div class="flex items-center gap-2">
+                <i class="fa-regular fa-clock text-amber-500"></i>
+                <span class="font-semibold text-gray-300">현재 시각:</span>
+                <span id="game-time" class="text-amber-400 font-bold">오후 02:00</span>
             </div>
-
-            <!-- 시계 및 진행 상태 -->
-            <div class="flex items-center gap-6">
-                <div class="text-right font-mono">
-                    <span class="text-xs text-emerald-600 block">CURRENT TIME</span>
-                    <span id="game-clock" class="text-2xl font-bold tracking-widest text-emerald-300 crt-glow">00:00 AM</span>
+            <!-- Suspicion Bar -->
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-triangle-exclamation text-red-500"></i>
+                <span class="font-semibold text-gray-300">엄마의 의심도:</span>
+                <div class="w-24 bg-gray-800 h-3 rounded-full overflow-hidden inline-block relative">
+                    <div id="suspicion-bar" class="bg-gradient-to-r from-orange-500 to-red-600 h-full transition-all duration-500" style="width: 10%;"></div>
                 </div>
-                <div class="h-10 w-[1px] bg-emerald-900 hidden sm:block"></div>
-                <div class="text-right hidden sm:block">
-                    <span class="text-xs text-emerald-600 block">SECURITY LEVEL</span>
-                    <span id="security-level" class="text-xs font-bold text-emerald-400 uppercase tracking-widest px-2 py-0.5 rounded border border-emerald-800 bg-emerald-950/40">안전 (SAFE)</span>
-                </div>
+                <span id="suspicion-text" class="text-red-400 font-bold w-10">10%</span>
             </div>
-        </header>
-
-        <!-- MAIN LAYOUT GRID -->
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-grow mb-3 h-0 min-h-[500px]">
-            
-            <!-- LEFT PANEL: NAVIGATION & LOGS (3 Cols) -->
-            <div class="lg:col-span-3 flex flex-col gap-3 h-full">
-                <!-- 네비게이션 카드 -->
-                <div class="border border-emerald-900 bg-[#050b0c]/80 rounded-lg p-3 flex flex-col gap-2">
-                    <span class="text-xs text-emerald-600 font-mono border-b border-emerald-950 pb-1 mb-1 block">NAVIGATION</span>
-                    
-                    <button onclick="switchTab('tab-control')" id="btn-tab-control" class="tab-btn w-full text-left px-3 py-2 rounded text-sm font-medium flex items-center justify-between bg-emerald-950/50 text-emerald-300 border border-emerald-700/60 shadow-[0_0_8px_rgba(16,185,129,0.1)] transition-all">
-                        <span><i class="fa-solid fa-sliders mr-2"></i>통제 및 제어 장치</span>
-                        <span id="control-alert" class="hidden w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-                    </button>
-                    
-                    <button onclick="switchTab('tab-rules')" id="btn-tab-rules" class="tab-btn w-full text-left px-3 py-2 rounded text-sm font-medium flex items-center justify-between hover:bg-emerald-950/20 text-emerald-500 transition-all border border-transparent">
-                        <span><i class="fa-solid fa-book-skull mr-2 text-yellow-500"></i>야간 근무 수칙서</span>
-                        <span class="text-[10px] bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded border border-yellow-800/40">필독</span>
-                    </button>
-
-                    <button onclick="switchTab('tab-cctv')" id="btn-tab-cctv" class="tab-btn w-full text-left px-3 py-2 rounded text-sm font-medium flex items-center justify-between hover:bg-emerald-950/20 text-emerald-500 transition-all border border-transparent">
-                        <span><i class="fa-solid fa-video mr-2"></i>CCTV 모니터링</span>
-                        <span id="cctv-alert" class="hidden text-[9px] bg-red-600 text-white px-1.5 py-0.5 rounded font-bold animate-pulse">ANOMALY</span>
-                    </button>
-
-                    <button onclick="switchTab('tab-board')" id="btn-tab-board" class="tab-btn w-full text-left px-3 py-2 rounded text-sm font-medium flex items-center justify-between hover:bg-emerald-950/20 text-emerald-500 transition-all border border-transparent">
-                        <span><i class="fa-solid fa-users mr-2"></i>입주민 자유게시판</span>
-                        <span class="text-[10px] bg-emerald-950 text-emerald-600 px-1.5 py-0.5 rounded">6개</span>
-                    </button>
+            <!-- Mental State -->
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-brain text-blue-400"></i>
+                <span class="font-semibold text-gray-300">멘탈:</span>
+                <div class="w-24 bg-gray-800 h-3 rounded-full overflow-hidden inline-block relative">
+                    <div id="mental-bar" class="bg-gradient-to-r from-teal-400 to-blue-500 h-full transition-all duration-500" style="width: 100%;"></div>
                 </div>
-
-                <!-- 터미널 로그 스트림 -->
-                <div class="border border-emerald-900 bg-[#040809]/90 rounded-lg p-3 flex-grow flex flex-col justify-between font-mono text-xs overflow-hidden min-h-[200px]">
-                    <div class="flex flex-col h-full">
-                        <span class="text-emerald-600 border-b border-emerald-950 pb-1 mb-2 block text-[10px]">LIVE SYSTEM LOGS</span>
-                        <div id="log-container" class="space-y-1.5 flex-grow overflow-y-auto max-h-[220px] lg:max-h-full pr-1 text-[11px] text-emerald-500/80">
-                            <!-- Logs dynamically appended here -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- CENTER/RIGHT WORKSPACE (9 Cols) -->
-            <div class="lg:col-span-9 border border-emerald-900 bg-[#040809]/60 rounded-lg p-4 flex flex-col h-full relative overflow-y-auto">
-                
-                <!-- TAB 1: CONTROL CENTER (메인 대처 장치) -->
-                <div id="tab-control" class="tab-content flex flex-col h-full justify-between gap-4">
-                    <div class="space-y-4">
-                        <div class="flex items-center justify-between border-b border-emerald-950 pb-2">
-                            <h2 class="text-base font-bold text-emerald-300 flex items-center gap-2">
-                                <i class="fa-solid fa-circle-nodes text-emerald-500"></i> 환경 및 비상 제어 시스템
-                            </h2>
-                            <span class="text-xs font-mono text-emerald-600">SYS_CTRL_ACTIVE</span>
-                        </div>
-
-                        <!-- 위기 대처 버튼 그리드 -->
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <!-- 제어 1: 복도 라디에이터 -->
-                            <div class="border border-emerald-950 bg-emerald-950/5 p-4 rounded-lg flex flex-col justify-between gap-3">
-                                <div>
-                                    <h3 class="font-bold text-sm text-emerald-300 flex items-center gap-1.5">
-                                        <i class="fa-solid fa-temperature-three-quarters text-amber-500"></i> 복도 중앙 히터 장치
-                                    </h3>
-                                    <p class="text-xs text-emerald-600/90 mt-1">2층 중앙 복도의 온도를 조절합니다. 현재 복도 온도는 정상입니다.</p>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span id="heater-status" class="text-xs font-mono px-2 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800">꺼짐 (OFF)</span>
-                                    <button id="btn-heater" onclick="toggleHeater()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded text-xs border border-zinc-700 transition-all font-bold">
-                                        스위치 ON
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- 제어 2: 404호 전용 수화 인터폰 -->
-                            <div class="border border-emerald-950 bg-emerald-950/5 p-4 rounded-lg flex flex-col justify-between gap-3">
-                                <div>
-                                    <h3 class="font-bold text-sm text-emerald-300 flex items-center gap-1.5">
-                                        <i class="fa-solid fa-phone-volume text-blue-500"></i> 내선 인터폰 채널-2
-                                    </h3>
-                                    <p class="text-xs text-emerald-600/90 mt-1">비정상 세대선으로부터 걸려온 유선 응답을 담당합니다.</p>
-                                </div>
-                                <div class="flex flex-col gap-2">
-                                    <div class="flex justify-between items-center">
-                                        <span id="phone-status" class="text-xs font-mono px-2 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800">대기 중 (IDLE)</span>
-                                        <div class="flex gap-2">
-                                            <button id="btn-phone-answer" onclick="answerPhone()" disabled class="px-3 py-1.5 bg-zinc-900 text-zinc-600 rounded text-xs border border-zinc-800 font-bold cursor-not-allowed">
-                                                연결 수락
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <!-- 발화하지 않고 무음 버티기를 유도하기 위해 말하기 버튼이 있으나, 수칙에 의해 절대 누르면 안 됨 -->
-                                    <button id="btn-phone-speak" onclick="speakToPhone()" disabled class="w-full py-1 bg-red-950/20 text-red-900/40 border border-red-950/30 rounded text-xs font-bold font-mono">
-                                        [경고] 음성 송출 (TALK)
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- 제어 3: 메인 콘솔 모니터 전원 -->
-                            <div class="border border-emerald-950 bg-emerald-950/5 p-4 rounded-lg flex flex-col justify-between gap-3">
-                                <div>
-                                    <h3 class="font-bold text-sm text-emerald-300 flex items-center gap-1.5">
-                                        <i class="fa-solid fa-display text-emerald-500"></i> 메인 모니터 출력 차단 (블라인드)
-                                    </h3>
-                                    <p class="text-xs text-emerald-600/90 mt-1">극심한 전파 누설이나 환풍구 비상 상황 시 빛을 완전 차단합니다.</p>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span id="monitor-status" class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-950/30 text-emerald-400 border border-emerald-900/50">출력 중 (ONLINE)</span>
-                                    <button id="btn-monitor" onclick="toggleMonitor()" class="px-4 py-1.5 bg-emerald-950 text-emerald-300 border border-emerald-500 rounded text-xs hover:bg-emerald-900 transition-all font-bold">
-                                        모니터 OFF
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- 제어 4: 사이렌 및 경비실 방출 스피커 -->
-                            <div class="border border-emerald-950 bg-emerald-950/5 p-4 rounded-lg flex flex-col justify-between gap-3">
-                                <div>
-                                    <h3 class="font-bold text-sm text-emerald-300 flex items-center gap-1.5">
-                                        <i class="fa-solid fa-bullhorn text-red-500 animate-pulse"></i> 보안 구역 안내 스피커
-                                    </h3>
-                                    <p class="text-xs text-emerald-600/90 mt-1">특정 비정상 형체가 관리실 문 앞까지 도달했을 때 원격 소음을 출력합니다.</p>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span id="speaker-status" class="text-xs font-mono px-2 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800">송출 차단됨</span>
-                                    <button id="btn-speaker" onclick="triggerSpeaker()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded text-xs border border-zinc-700 transition-all font-bold">
-                                        방출음 송출
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 중앙 관리실 가상 모니터 암막 오버레이 -->
-                    <div id="blackout-screen" class="hidden absolute inset-0 bg-black z-10 flex flex-col items-center justify-center text-zinc-700">
-                        <div class="text-center font-mono space-y-2">
-                            <i class="fa-regular fa-eye-slash text-4xl animate-pulse mb-2 block"></i>
-                            <p class="text-sm">MONITOR STANDBY (NO RADIATION)</p>
-                            <p class="text-xs text-zinc-800">소리에 집중하십시오. 절대 움직이지 마십시오.</p>
-                        </div>
-                    </div>
-
-                    <!-- 실시간 멘트 알림 콘솔 -->
-                    <div class="border border-emerald-950 bg-black/40 p-3 rounded-lg font-mono text-xs">
-                        <div class="text-emerald-500 uppercase font-bold mb-1">상황 알림창</div>
-                        <p id="alert-display" class="text-zinc-400">조용하고 평화로운 새벽입니다. 시스템이 정상 감시 중입니다.</p>
-                    </div>
-                </div>
-
-                <!-- TAB 2: RULES AND PROTOCOLS (야간 수칙서) -->
-                <div id="tab-rules" class="tab-content hidden space-y-4">
-                    <div class="flex items-center justify-between border-b border-yellow-900 pb-2">
-                        <h2 class="text-base font-bold text-yellow-500 flex items-center gap-2 crt-glow-amber">
-                            <i class="fa-solid fa-scroll"></i> 청아빌라 보안대원 행동 지침서
-                        </h2>
-                        <span class="text-xs font-mono text-yellow-600">CONFIDENTIAL</span>
-                    </div>
-
-                    <div class="space-y-3 text-sm leading-relaxed text-zinc-300 font-sans max-h-[450px] overflow-y-auto pr-2">
-                        <div class="bg-yellow-950/10 border-l-2 border-yellow-600 p-3 rounded-r">
-                            <p class="text-xs text-yellow-400 font-bold mb-1">[공통 전제]</p>
-                            <p class="text-xs text-zinc-400">본 수칙은 청아빌라 야간 보안 근무 시에만 특별 적용되는 긴급 프로토콜입니다. 불이행 시의 모든 법적, 육체적 책임은 근무자 본인에게 귀속됩니다. 지침을 외우거나 정독하십시오.</p>
-                        </div>
-
-                        <!-- 수칙 항목들 -->
-                        <div class="space-y-4 pt-2">
-                            <div class="border-b border-emerald-950/40 pb-3">
-                                <h4 class="font-bold text-emerald-400 mb-1">제 1조 [지하 2층 입구의 오동작]</h4>
-                                <p class="text-xs text-zinc-400">
-                                    청아빌라에는 공식적으로 <span class="text-red-400 font-bold">지하 2층이 존재하지 않습니다.</span> 만약 CCTV 화면 상으로 엘리베이터의 목적지가 'B2'로 고정된 상태에서 내부가 붉게 변하기 시작하면, 신속하게 해당 엘리베이터 감시 카메라의 송출을 차단하십시오. 화면에 비친 존재가 관리자의 시선을 인지하는 것을 막아야 합니다.
-                                </p>
-                            </div>
-
-                            <div class="border-b border-emerald-950/40 pb-3">
-                                <h4 class="font-bold text-emerald-400 mb-1">제 2조 [복도의 키가 큰 거주자]</h4>
-                                <p class="text-xs text-zinc-400">
-                                    새벽 2시에서 4시 사이, 복도 한가운데(CCTV-2)에 키가 비정상적으로 크고 고개를 숙인 남성의 그림자가 비칠 때가 있습니다. 이 그림자는 차가운 대기를 선호합니다. 즉시 <span class="text-amber-500 font-bold">복도 히터(Heater)를 켜십시오.</span> 만약 25초 이내에 온도를 올리지 않는다면, 그는 그것이 자신을 향한 무례로 알고 관리실 앞 복도까지 달려올 것입니다.
-                                </p>
-                            </div>
-
-                            <div class="border-b border-emerald-950/40 pb-3">
-                                <h4 class="font-bold text-emerald-400 mb-1">제 3조 [공실 404호의 회선]</h4>
-                                <p class="text-xs text-zinc-400">
-                                    404호는 과거 수해로 인해 선로가 침수되어 작동하지 않는 호수입니다. 만약 404호로부터 관리실 인터폰 전화가 수신되면, 당황하지 말고 <span class="text-emerald-400 font-bold">전화를 받으십시오.</span> 단, 전화를 연결한 직후 어떠한 언어적, 기계적 음성도 출력해서는 안 됩니다. <span class="text-red-400 font-bold">침묵을 지키십시오.</span> 수화기 너머의 소리가 저절로 끊어질 때까지 절대 말하기(TALK) 스위치를 누르면 안 됩니다.
-                                </p>
-                            </div>
-
-                            <div class="border-b border-emerald-950/40 pb-3">
-                                <h4 class="font-bold text-emerald-400 mb-1">제 4조 [환풍구의 무거움]</h4>
-                                <p class="text-xs text-zinc-400">
-                                    새벽 근무 중 갑작스럽게 천장 환풍구 방향에서 '드르륵'거리며 철판이 미끄러지는 무거운 소음이 들린다면, 그것은 환풍구를 통해 당신을 엿보기 위함입니다. 즉시 관리실의 <span class="text-yellow-500 font-bold">메인 모니터를 OFF</span>로 전환하고, <span class="text-red-500 font-bold">마우스 포인터를 절대 10초간 한 치도 움직이지 마십시오.</span> 빛과 작은 기계적 모션도 그것에게는 유인제가 됩니다.
-                                </p>
-                            </div>
-
-                            <div class="border-b border-emerald-950/40 pb-3">
-                                <h4 class="font-bold text-emerald-400 mb-1">제 5조 [복도 끝의 발자국]</h4>
-                                <p class="text-xs text-zinc-400">
-                                    관리실 정문 문틀 아래로 누군가의 젖은 물발자국이 점차 다가오는 소리나 그림자가 보일 경우, 어설픈 무기로 맞서지 마십시오. 즉시 <span class="text-emerald-400 font-bold">방출음 송출 스피커</span>를 수 초 간 활성화하십시오. 시끄러운 경적음과 전파 노이즈는 해당 개체의 방향감각을 상실하게 하여 원대복귀시킵니다.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- TAB 3: CCTV MONITORS (CCTV 감시 채널) -->
-                <div id="tab-cctv" class="tab-content hidden flex flex-col h-full gap-4">
-                    <div class="flex items-center justify-between border-b border-emerald-950 pb-2">
-                        <h2 class="text-base font-bold text-emerald-300 flex items-center gap-2">
-                            <i class="fa-solid fa-circle-dot text-red-600 animate-pulse"></i> 실시간 고화질 다중 CCTV 제어망
-                        </h2>
-                        <span class="text-xs font-mono text-emerald-600">FEED_ONLINE: 4CH</span>
-                    </div>
-
-                    <!-- CCTV GRID -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-grow">
-                        <!-- CAM-1: 정문 경비초소 외부 -->
-                        <div class="border border-emerald-950 bg-black rounded relative overflow-hidden flex flex-col justify-between">
-                            <div class="absolute top-1 left-2 text-[10px] font-mono bg-black/80 px-1 rounded z-10 flex items-center gap-1">
-                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> CAM-01 (빌라 외부정원)
-                            </div>
-                            <canvas id="canvas-cam1" class="w-full h-36 bg-zinc-950"></canvas>
-                            <div class="p-1 bg-zinc-950 text-[10px] flex justify-between text-zinc-500 font-mono">
-                                <span>1080p @ 15fps</span>
-                                <span>SIGNAL: GOOD</span>
-                            </div>
-                        </div>
-
-                        <!-- CAM-2: 빌라 2층 복도 -->
-                        <div class="border border-emerald-950 bg-black rounded relative overflow-hidden flex flex-col justify-between">
-                            <div class="absolute top-1 left-2 text-[10px] font-mono bg-black/80 px-1 rounded z-10 flex items-center gap-1">
-                                <span id="cam2-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> CAM-02 (2층 복도 중앙)
-                            </div>
-                            <canvas id="canvas-cam2" class="w-full h-36 bg-zinc-950"></canvas>
-                            <div class="p-1 bg-zinc-950 text-[10px] flex justify-between text-zinc-500 font-mono">
-                                <span>1080p @ 12fps</span>
-                                <span id="cam2-status">SIGNAL: GOOD</span>
-                            </div>
-                        </div>
-
-                        <!-- CAM-3: 승객용 엘리베이터 -->
-                        <div class="border border-emerald-950 bg-black rounded relative overflow-hidden flex flex-col justify-between">
-                            <div class="absolute top-1 left-2 text-[10px] font-mono bg-black/80 px-1 rounded z-10 flex items-center gap-1">
-                                <span id="cam3-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> CAM-03 (엘리베이터 내부)
-                            </div>
-                            <canvas id="canvas-cam3" class="w-full h-36 bg-zinc-950"></canvas>
-                            <div class="p-1 bg-zinc-950 text-[10px] flex justify-between items-center text-zinc-500 font-mono">
-                                <span id="elevator-floor">FLOOR: 01F</span>
-                                <button id="btn-cam3-shutter" onclick="toggleCam3Shutter()" class="px-2 py-0.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded text-[9px] border border-zinc-800 font-bold uppercase">
-                                    CLOSE STREAM
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- CAM-4: 지하 정화 시설 및 환풍기 외부 -->
-                        <div class="border border-emerald-950 bg-black rounded relative overflow-hidden flex flex-col justify-between">
-                            <div class="absolute top-1 left-2 text-[10px] font-mono bg-black/80 px-1 rounded z-10 flex items-center gap-1">
-                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> CAM-04 (지하 기계배관실)
-                            </div>
-                            <canvas id="canvas-cam4" class="w-full h-36 bg-zinc-950"></canvas>
-                            <div class="p-1 bg-zinc-950 text-[10px] flex justify-between text-zinc-500 font-mono">
-                                <span>720p @ 10fps</span>
-                                <span>SIGNAL: SATURATED</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- TAB 4: RESIDENT FORUM (입주민 게시판) -->
-                <div id="tab-board" class="tab-content hidden space-y-4">
-                    <div class="flex items-center justify-between border-b border-emerald-950 pb-2">
-                        <h2 class="text-base font-bold text-emerald-300 flex items-center gap-2">
-                            <i class="fa-solid fa-comments"></i> 청아빌라 거주민 내부 커뮤니티
-                        </h2>
-                        <span class="text-xs font-mono text-emerald-600">INTRANET_BOARD</span>
-                    </div>
-
-                    <!-- 게시글 리스트 -->
-                    <div class="space-y-3 max-h-[420px] overflow-y-auto pr-2">
-                        
-                        <!-- 글 1 -->
-                        <div onclick="openPostModal(1)" class="border border-emerald-950 hover:border-emerald-700 bg-emerald-950/5 hover:bg-emerald-950/10 p-3 rounded cursor-pointer transition-all">
-                            <div class="flex justify-between items-center text-xs mb-1">
-                                <span class="text-emerald-500 font-bold">작성자: 204호 세대주</span>
-                                <span class="text-emerald-700">오후 08:34</span>
-                            </div>
-                            <h4 class="font-bold text-sm text-zinc-200">요즘 밤에 경비실 아저씨가 제 이름을 부르는 것 같아요.</h4>
-                            <p class="text-xs text-zinc-500 mt-1 truncate">새벽 두 시쯤 넘으면 저희 방 창 밖에서 똑같이 '민우 아빠, 문 열어봐' 하는 경비 아저씨 목소리가 납니다...</p>
-                        </div>
-
-                        <!-- 글 2 -->
-                        <div onclick="openPostModal(2)" class="border border-emerald-950 hover:border-emerald-700 bg-emerald-950/5 hover:bg-emerald-950/10 p-3 rounded cursor-pointer transition-all">
-                            <div class="flex justify-between items-center text-xs mb-1">
-                                <span class="text-emerald-500 font-bold">작성자: 302호 거주자</span>
-                                <span class="text-emerald-700">오후 04:12</span>
-                            </div>
-                            <h4 class="font-bold text-sm text-zinc-200">엘리베이터 거울에 자꾸 손자국 남기는 분 누구죠?</h4>
-                            <p class="text-xs text-zinc-500 mt-1 truncate">매일 닦아놓아도 새벽에 엘리베이터 타보면 거울 제일 높은 곳(한 2미터 50센티는 될 법한 위치)에 검은 자국이...</p>
-                        </div>
-
-                        <!-- 글 3 -->
-                        <div onclick="openPostModal(3)" class="border border-emerald-950 hover:border-emerald-700 bg-emerald-950/5 hover:bg-emerald-950/10 p-3 rounded cursor-pointer transition-all">
-                            <div class="flex justify-between items-center text-xs mb-1">
-                                <span class="text-yellow-600 font-bold">작성자: 전임 관리자 (퇴직)</span>
-                                <span class="text-emerald-700">어제</span>
-                            </div>
-                            <h4 class="font-bold text-sm text-yellow-500"><i class="fa-solid fa-triangle-exclamation mr-1"></i> [필독] 새 야간 근무자 보시요 (절대 읽으시오)</h4>
-                            <p class="text-xs text-zinc-500 mt-1 truncate">만약 당신이 수칙서에 적힌 노란 우비나 환풍구 지침에 의문이 생긴다면 이 글을 꼼꼼히 읽어보시오...</p>
-                        </div>
-
-                        <!-- 글 4 -->
-                        <div onclick="openPostModal(4)" class="border border-emerald-950 hover:border-emerald-700 bg-emerald-950/5 hover:bg-emerald-950/10 p-3 rounded cursor-pointer transition-all">
-                            <div class="flex justify-between items-center text-xs mb-1">
-                                <span class="text-emerald-500 font-bold">작성자: 101호 유모씨</span>
-                                <span class="text-emerald-700">그저께</span>
-                            </div>
-                            <h4 class="font-bold text-sm text-zinc-200">지하 2층 버튼이 자꾸 눌리는 문제에 대하여</h4>
-                            <p class="text-xs text-zinc-500 mt-1 truncate">우리 청아빌라는 구릉지 아래를 깎아 지어서 지하 2층이 있을 리가 없고 엘리베이터도 B1까지만 있는 게 맞는데...</p>
-                        </div>
-                    </div>
-                </div>
+                <span id="mental-text" class="text-blue-400 font-bold w-10">100%</span>
             </div>
         </div>
 
-        <!-- ================= SYSTEM WARNING OR GLITCH BANNER ================= -->
-        <div id="danger-banner" class="hidden border border-red-900 bg-red-950/20 p-2.5 rounded-lg text-xs flex items-center justify-between text-red-400 font-mono animate-pulse">
-            <span class="flex items-center gap-2">
-                <i class="fa-solid fa-triangle-exclamation text-base"></i>
-                <span>[DANGER] ANOMALY FREQUENCY CRITICAL. EXECUTE COUNTER-PROTOCOLS IMMEDIATELY!</span>
-            </span>
-            <span id="danger-timer">TIME LIMIT: 15s</span>
+        <!-- Mute and Restart Controls -->
+        <div class="flex gap-2">
+            <button id="sound-toggle-btn" onclick="toggleSound()" class="bg-gray-800 hover:bg-gray-700 p-2 rounded-lg text-gray-400 hover:text-white transition duration-200" title="소리 켜기/끄기">
+                <i class="fa-solid fa-volume-high"></i>
+            </button>
+            <button onclick="resetGame()" class="bg-gray-800 hover:bg-gray-700 p-2 rounded-lg text-red-400 hover:text-red-300 transition duration-200" title="처음부터 다시">
+                <i class="fa-solid fa-rotate-right"></i>
+            </button>
         </div>
-
-        <!-- FOOTER: CREDITS -->
-        <footer class="border-t border-emerald-950 pt-2 text-center text-[10px] text-emerald-800 font-mono flex flex-col sm:flex-row justify-between items-center gap-2">
-            <p>© 2026 CHEONG-AH APT SECURITY SYSTEM INC. ALL RIGHTS RESERVED.</p>
-            <p class="text-red-950">주의: 당신이 보는 화면은 누군가 기록한 사후 데이터 파일일 수 있습니다.</p>
-        </footer>
     </div>
+</header>
 
-    <!-- ================= GAME OVER / SUCCESS MODALS ================= -->
+
+<!-- Main Interactive Panel -->
+<main class="flex-1 max-w-6xl w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
     
-    <!-- 1. GAME OVER OVERLAY -->
-    <div id="gameover-screen" class="hidden fixed inset-0 bg-black z-50 flex flex-col items-center justify-center p-6 text-red-500 font-mono">
-        <div class="max-w-md w-full border border-red-950 bg-black/95 p-8 rounded-lg shadow-2xl relative text-center space-y-6">
-            <h1 class="text-4xl font-black crt-glow-red tracking-wider uppercase text-red-600 animate-bounce">SIGNAL LOST</h1>
-            
-            <p class="text-sm text-zinc-400 leading-relaxed font-sans" id="gameover-desc">
-                지침 제3조 및 제4조의 복합적인 불이행으로 인해 통신망이 오염되었습니다. 관리실 잠금장치가 열렸습니다. 발자국 소리가 바로 뒤에서 들립니다.
-            </p>
-
-            <div class="border-t border-red-950 pt-4 text-xs text-zinc-600 text-left space-y-1">
-                <p>&gt; ERROR_CODE: DEATH_BY_RULE_VIOLATION</p>
-                <p>&gt; SYSTEM_LOG: OPERATOR_NOT_FOUND</p>
-                <p>&gt; STATUS: [정지]</p>
-            </div>
-
-            <button onclick="restartGame()" class="px-8 py-3 bg-red-950 hover:bg-red-800 text-red-200 border border-red-500 rounded font-bold tracking-wider transition-all duration-300 w-full active:scale-95">
-                근무 다시 시작하기 (RETRY)
-            </button>
+    <!-- Left Panel: Map/Room Visual Representation (Interactive Clickable Area) (lg:col-span-7) -->
+    <div class="lg:col-span-7 bg-gray-900/80 backdrop-blur border border-gray-800 rounded-2xl p-4 flex flex-col gap-4 shadow-xl">
+        <div class="flex items-center justify-between border-b border-gray-800 pb-2">
+            <h2 class="text-md font-bold text-gray-300 flex items-center gap-2">
+                <i class="fa-solid fa-house-user text-red-500"></i>
+                <span id="location-title">내 방 (Locked Room)</span>
+            </h2>
+            <span class="text-xs px-2 py-1 bg-red-950 text-red-400 rounded-full border border-red-900/50" id="room-status">문이 굳게 잠겨있음</span>
         </div>
-    </div>
 
-    <!-- 2. VICTORY OVERLAY -->
-    <div id="victory-screen" class="hidden fixed inset-0 bg-black z-50 flex flex-col items-center justify-center p-6 text-emerald-400 font-mono">
-        <div class="max-w-md w-full border border-emerald-950 bg-zinc-950/95 p-8 rounded-lg shadow-2xl text-center space-y-6">
-            <h1 class="text-3xl font-black crt-glow text-emerald-400 tracking-wider">06:00 AM - 퇴근</h1>
+        <!-- Game Screen (Interactive Layout) -->
+        <div class="relative bg-gray-950 border border-gray-800 rounded-xl overflow-hidden aspect-[4/3] w-full shadow-inner flex flex-col justify-between" id="room-canvas-container">
             
-            <p class="text-sm text-zinc-300 leading-relaxed font-sans">
-                새 박명이 청아빌라 뒤편 산언덕을 비추기 시작합니다. 관리자 단말기가 정전기를 뿜으며 자동 세션을 종료합니다. 당신은 약속된 새벽 시간의 수칙들을 성실히 완수해 살아남았습니다.
-            </p>
-
-            <div class="bg-emerald-950/20 p-4 rounded text-left text-xs text-emerald-500 border border-emerald-900/50 leading-normal font-sans space-y-2">
-                <p class="font-bold text-emerald-400"><i class="fa-solid fa-unlock mr-1"></i> 마지막 인계 지침:</p>
-                <p>1. 정문 교대 근무자에게 오늘 밤 일어났던 '404호' 일에 대해서는 묻지 마십시오. 그는 당신을 고용한 대원이 아닙니다.</p>
-                <p>2. 빌라를 퇴근할 때 절대 복도 2층을 다시 보거나 올려다보지 마십시오. 눈이 마주치면 퇴근 카드는 소급 무효화됩니다.</p>
-            </div>
-
-            <button onclick="restartGame()" class="px-8 py-3 bg-emerald-950 hover:bg-emerald-800 text-emerald-300 border border-emerald-500 rounded font-bold tracking-wider transition-all duration-300 w-full active:scale-95">
-                처음부터 다시 살아남기
-            </button>
-        </div>
-    </div>
-
-    <!-- 3. BOARD DETAIL MODAL (자유게시판 상세 모달) -->
-    <div id="board-modal" class="hidden fixed inset-0 bg-black/80 z-40 flex items-center justify-center p-4">
-        <div class="max-w-lg w-full border border-emerald-900 bg-zinc-950/95 p-6 rounded-lg text-zinc-300 space-y-4 shadow-xl">
-            <div class="flex justify-between items-start border-b border-emerald-950 pb-2">
-                <div>
-                    <h3 id="modal-title" class="text-base font-bold text-emerald-300">게시글 제목</h3>
-                    <span id="modal-author" class="text-xs text-zinc-500 font-mono">작성자: 000호</span>
+            <!-- ALERT FLASHER FOR FOOTSTEPS -->
+            <div id="footstep-alert" class="absolute inset-0 bg-red-950/90 z-30 flex flex-col items-center justify-center p-6 hidden transition-all duration-300">
+                <div class="text-red-500 text-6xl mb-4 animate-bounce">
+                    <i class="fa-solid fa-shoe-prints"></i>
                 </div>
-                <button onclick="closePostModal()" class="text-zinc-500 hover:text-emerald-400 text-lg">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+                <h3 class="text-red-400 text-2xl font-extrabold text-center mb-2">쿵... 쿵... 발소리가 다가옵니다!</h3>
+                <p class="text-gray-300 text-sm text-center mb-6">엄마가 방으로 다가오는 소리입니다. 어서 안전한 곳에 숨으세요!</p>
+                <div class="flex gap-4">
+                    <button onclick="interactWithObject('bed', 'hide')" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition duration-200 transform hover:scale-105">
+                        <i class="fa-solid fa-bed mr-2"></i>침대 밑으로 숨기
+                    </button>
+                    <button onclick="interactWithObject('wardrobe', 'hide')" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition duration-200 transform hover:scale-105">
+                        <i class="fa-solid fa-door-closed mr-2"></i>옷장 속에 숨기
+                    </button>
+                </div>
+                <div class="mt-6 text-gray-400 font-bold text-sm">
+                    남은 시간: <span id="alert-countdown" class="text-red-500 text-xl font-black">5</span>초!
+                </div>
             </div>
-            <div id="modal-body" class="text-sm leading-relaxed space-y-3 max-h-60 overflow-y-auto pr-2">
-                <!-- Content injected dynamically -->
+
+
+            <!-- Visual Map Canvas (Dynamic SVG and Buttons mapped to Room layout) -->
+            <div class="relative w-full h-full flex items-center justify-center p-4">
+                
+                <!-- Room Floor Plan Rendering -->
+                <svg viewBox="0 0 800 600" class="absolute inset-0 w-full h-full text-gray-800 opacity-20 pointer-events-none">
+                    <rect x="50" y="50" width="700" height="500" rx="15" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="10 5" />
+                    <!-- Grid Lines for Sci-Fi Blueprint Aesthetic -->
+                    <path d="M 50,150 L 750,150 M 50,300 L 750,300 M 50,450 L 750,450 M 200,50 L 200,550 M 400,50 L 400,550 M 600,50 L 600,550" fill="none" stroke="currentColor" stroke-width="1" />
+                </svg>
+
+                <!-- Dynamic Location Maps: 1. Locked Room, 2. Hallway, 3. Living Room -->
+                <div id="map-room" class="grid grid-cols-3 grid-rows-2 gap-4 w-full h-full p-4 relative z-10">
+                    
+                    <!-- Bed Object -->
+                    <button onclick="inspectElement('bed')" class="group relative bg-gray-900 hover:bg-red-950/30 border border-gray-800 hover:border-red-500/50 rounded-xl flex flex-col items-center justify-center p-4 transition-all duration-300 transform hover:-translate-y-1 shadow-md">
+                        <div class="text-4xl text-amber-500 group-hover:scale-110 transition-transform mb-2">
+                            <i class="fa-solid fa-bed"></i>
+                        </div>
+                        <span class="text-sm font-bold text-gray-300">내 침대</span>
+                        <span class="text-xs text-gray-500 mt-1">휴식 / 침대 밑 숨기</span>
+                        <!-- Notification badge for clue -->
+                        <div id="badge-bed" class="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping hidden"></div>
+                    </button>
+
+                    <!-- Desk & Computer Object -->
+                    <button onclick="inspectElement('desk')" class="group relative bg-gray-900 hover:bg-red-950/30 border border-gray-800 hover:border-red-500/50 rounded-xl flex flex-col items-center justify-center p-4 transition-all duration-300 transform hover:-translate-y-1 shadow-md">
+                        <div class="text-4xl text-blue-500 group-hover:scale-110 transition-transform mb-2">
+                            <i class="fa-solid fa-desktop"></i>
+                        </div>
+                        <span class="text-sm font-bold text-gray-300">책상과 컴퓨터</span>
+                        <span class="text-xs text-gray-500 mt-1">서랍 수색 / 컴퓨터 켜기</span>
+                        <div id="badge-desk" class="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping hidden"></div>
+                    </button>
+
+                    <!-- Locked Door Object -->
+                    <button onclick="inspectElement('door')" class="group relative bg-gray-900 hover:bg-red-950/30 border border-gray-800 hover:border-red-500/50 rounded-xl flex flex-col items-center justify-center p-4 transition-all duration-300 transform hover:-translate-y-1 shadow-md">
+                        <div class="text-4xl text-red-500 group-hover:scale-110 transition-transform mb-2">
+                            <i class="fa-solid fa-door-closed"></i>
+                        </div>
+                        <span class="text-sm font-bold text-gray-300">굳게 잠긴 방문</span>
+                        <span class="text-xs text-gray-500 mt-1">소리 듣기 / 문 따기 시도</span>
+                    </button>
+
+                    <!-- Wardrobe Object -->
+                    <button onclick="inspectElement('wardrobe')" class="group relative bg-gray-900 hover:bg-red-950/30 border border-gray-800 hover:border-red-500/50 rounded-xl flex flex-col items-center justify-center p-4 transition-all duration-300 transform hover:-translate-y-1 shadow-md">
+                        <div class="text-4xl text-purple-500 group-hover:scale-110 transition-transform mb-2">
+                            <i class="fa-solid fa-door-open"></i>
+                        </div>
+                        <span class="text-sm font-bold text-gray-300">옷장</span>
+                        <span class="text-xs text-gray-500 mt-1">옷 뒤지기 / 옷장 속에 숨기</span>
+                    </button>
+
+                    <!-- Window Object -->
+                    <button onclick="inspectElement('window')" class="group relative bg-gray-900 hover:bg-red-950/30 border border-gray-800 hover:border-red-500/50 rounded-xl flex flex-col items-center justify-center p-4 transition-all duration-300 transform hover:-translate-y-1 shadow-md">
+                        <div class="text-4xl text-teal-400 group-hover:scale-110 transition-transform mb-2">
+                            <i class="fa-regular fa-window-maximize"></i>
+                        </div>
+                        <span class="text-sm font-bold text-gray-300">잠긴 이중창문</span>
+                        <span class="text-xs text-gray-500 mt-1">밖 관찰 / 잠금 해제</span>
+                    </button>
+
+                    <!-- Trash Can / Corner Object -->
+                    <button onclick="inspectElement('trash')" class="group relative bg-gray-900 hover:bg-red-950/30 border border-gray-800 hover:border-red-500/50 rounded-xl flex flex-col items-center justify-center p-4 transition-all duration-300 transform hover:-translate-y-1 shadow-md">
+                        <div class="text-4xl text-gray-400 group-hover:scale-110 transition-transform mb-2">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </div>
+                        <span class="text-sm font-bold text-gray-300">쓰레기통 & 구석</span>
+                        <span class="text-xs text-gray-500 mt-1">뒤져보기</span>
+                    </button>
+                </div>
+
+                
+                <!-- Hallway Location Map (Hidden Initially) -->
+                <div id="map-hallway" class="grid grid-cols-3 grid-rows-2 gap-4 w-full h-full p-4 relative z-10 hidden">
+                    <!-- My Room Door (Return) -->
+                    <button onclick="inspectElement('hall-myroom')" class="group bg-gray-900 hover:bg-teal-950/30 border border-gray-800 hover:border-teal-500/50 rounded-xl flex flex-col items-center justify-center p-4 transition-all duration-300">
+                        <div class="text-4xl text-teal-500 mb-2"><i class="fa-solid fa-arrow-left"></i></div>
+                        <span class="text-sm font-bold text-gray-300">내 방으로 도망가기</span>
+                        <span class="text-xs text-gray-500 mt-1">언제든지 귀환 가능</span>
+                    </button>
+
+                    <!-- Mom's Master Room -->
+                    <button onclick="inspectElement('hall-momroom')" class="group bg-gray-900 hover:bg-red-950/30 border border-gray-800 hover:border-red-500/50 rounded-xl flex flex-col items-center justify-center p-4 transition-all duration-300">
+                        <div class="text-4xl text-rose-600 mb-2"><i class="fa-solid fa-bed"></i></div>
+                        <span class="text-sm font-bold text-gray-300">엄마 안방</span>
+                        <span class="text-xs text-gray-500 mt-1">위험하지만 고급 템 가득</span>
+                    </button>
+
+                    <!-- Living Room Area -->
+                    <button onclick="inspectElement('hall-livingroom')" class="group bg-gray-900 hover:bg-red-950/30 border border-gray-800 hover:border-red-500/50 rounded-xl flex flex-col items-center justify-center p-4 transition-all duration-300">
+                        <div class="text-4xl text-amber-500 mb-2"><i class="fa-solid fa-couch"></i></div>
+                        <span class="text-sm font-bold text-gray-300">거실 & 부엌</span>
+                        <span class="text-xs text-gray-500 mt-1">엄마의 활동 반경</span>
+                    </button>
+
+                    <!-- Bathroom -->
+                    <button onclick="inspectElement('hall-bathroom')" class="group bg-gray-900 hover:bg-red-950/30 border border-gray-800 hover:border-red-500/50 rounded-xl flex flex-col items-center justify-center p-4 transition-all duration-300">
+                        <div class="text-4xl text-sky-400 mb-2"><i class="fa-solid fa-bath"></i></div>
+                        <span class="text-sm font-bold text-gray-300">욕실</span>
+                        <span class="text-xs text-gray-500 mt-1">엄마 샤워 시 무방비지대</span>
+                    </button>
+
+                    <!-- Front Door (Exit Target) -->
+                    <button onclick="inspectElement('hall-frontdoor')" class="group bg-gray-950 hover:bg-red-950/40 border border-red-900 hover:border-red-500 rounded-xl flex flex-col items-center justify-center p-4 transition-all duration-300 border-2">
+                        <div class="text-4xl text-red-500 mb-2 animate-pulse"><i class="fa-solid fa-right-from-bracket"></i></div>
+                        <span class="text-sm font-bold text-gray-200">현관문 (탈출구)</span>
+                        <span class="text-xs text-red-400 mt-1 font-bold">도어락 & 이중 잠금</span>
+                    </button>
+
+                    <!-- Empty Spot/Decoy or Small Cabinet -->
+                    <button onclick="inspectElement('hall-closet')" class="group bg-gray-900 hover:bg-red-950/30 border border-gray-800 hover:border-red-500/50 rounded-xl flex flex-col items-center justify-center p-4 transition-all duration-300">
+                        <div class="text-4xl text-stone-400 mb-2"><i class="fa-solid fa-box-archive"></i></div>
+                        <span class="text-sm font-bold text-gray-300">복도 수납장</span>
+                        <span class="text-xs text-gray-500 mt-1">잡동사니 보관함</span>
+                    </button>
+                </div>
             </div>
-            <div class="flex justify-end pt-2 border-t border-emerald-950">
-                <button onclick="closePostModal()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 border border-zinc-800 rounded text-xs">
-                    창 닫기
-                </button>
+
+            <!-- Lockpicking Minigame Panel overlay -->
+            <div id="lockpick-game" class="absolute inset-x-4 bottom-4 bg-gray-900/95 border border-red-500/50 rounded-xl p-4 hidden z-20">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs text-red-400 font-bold"><i class="fa-solid fa-toolbox mr-1"></i> 방문 자물쇠 따는 중...</span>
+                    <button onclick="closeMinigame()" class="text-gray-400 hover:text-white text-xs">포기</button>
+                </div>
+                <p class="text-[11px] text-gray-400 mb-3">하단 슬라이더의 파란 표적선이 중앙 <span class="text-amber-400 font-bold">노란 안심 구역</span>에 왔을 때 단단히 고정하십시오!</p>
+                <div class="relative w-full h-8 bg-gray-950 rounded-lg overflow-hidden border border-gray-800 mb-3">
+                    <!-- Safe Zone -->
+                    <div id="lockpick-safezone" class="absolute top-0 bottom-0 bg-yellow-500/40 border-x-2 border-yellow-400 w-12" style="left: 45%;"></div>
+                    <!-- Cursor Slider -->
+                    <div id="lockpick-cursor" class="absolute top-0 bottom-0 w-1.5 bg-cyan-400 shadow-[0_0_8px_cyan]" style="left: 0%;"></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-400">성공 횟수: <strong id="lockpick-success-count" class="text-teal-400">0 / 3</strong></span>
+                    <button onclick="strikeLockpick()" class="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold py-1.5 px-4 rounded-lg shadow-lg">핀 고정하기 (Space)</button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Inventory List -->
+        <div class="bg-gray-950 border border-gray-800 rounded-xl p-3">
+            <span class="text-xs font-bold text-gray-400 block mb-2"><i class="fa-solid fa-briefcase mr-1"></i> 소지품 (Inventory)</span>
+            <div id="inventory-container" class="flex flex-wrap gap-2">
+                <!-- Fallback when empty -->
+                <span id="empty-inventory-msg" class="text-xs text-gray-600 italic">가방이 비어있습니다. 방안의 사물을 꼼꼼히 조사하세요.</span>
             </div>
         </div>
     </div>
 
-    <!-- ================= GAME LOGIC & SCRIPTS ================= -->
-    <script>
-        // Web Audio API를 사용해 배경 공포 분위기와 효과음 생성
-        class SoundEngine {
-            constructor() {
-                this.ctx = null;
-                this.droneNode = null;
-                this.staticNoiseNode = null;
-                this.gainDrone = null;
-                this.gainStatic = null;
-            }
 
-            init() {
-                try {
-                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    this.startDrone();
-                    this.startStatic();
-                } catch(e) {
-                    console.warn("Web Audio API not supported", e);
-                }
-            }
-
-            // 저주파 드론 배경음
-            startDrone() {
-                if (!this.ctx) return;
-                
-                // Low Hum Oscillator 1
-                let osc1 = this.ctx.createOscillator();
-                osc1.type = 'sawtooth';
-                osc1.frequency.value = 55; // A1 저음
-                
-                // Low Pass Filter
-                let filter = this.ctx.createBiquadFilter();
-                filter.type = 'lowpass';
-                filter.frequency.value = 80;
-
-                this.gainDrone = this.ctx.createGain();
-                this.gainDrone.gain.setValueAtTime(0.12, this.ctx.currentTime);
-
-                osc1.connect(filter);
-                filter.connect(this.gainDrone);
-                this.gainDrone.connect(this.ctx.destination);
-                osc1.start();
-                this.droneNode = osc1;
-
-                // Modulator for eerie throbbing
-                let mod = this.ctx.createOscillator();
-                let modGain = this.ctx.createGain();
-                mod.type = 'sine';
-                mod.frequency.value = 0.2; // 0.2Hz
-                modGain.gain.value = 15;
-
-                mod.connect(modGain);
-                modGain.connect(filter.frequency);
-                mod.start();
-            }
-
-            // CCTV 및 변칙현상용 잡음(화이트노이즈) 생성
-            startStatic() {
-                if (!this.ctx) return;
-
-                const bufferSize = 2 * this.ctx.sampleRate;
-                const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-                const output = noiseBuffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) {
-                    output[i] = Math.random() * 2 - 1;
-                }
-
-                const whiteNoise = this.ctx.createBufferSource();
-                whiteNoise.buffer = noiseBuffer;
-                whiteNoise.loop = true;
-
-                const filter = this.ctx.createBiquadFilter();
-                filter.type = 'bandpass';
-                filter.frequency.value = 1000;
-                filter.Q.value = 0.5;
-
-                this.gainStatic = this.ctx.createGain();
-                this.gainStatic.gain.setValueAtTime(0.015, this.ctx.currentTime); // 매우 미세하게 배경음으로
-
-                whiteNoise.connect(filter);
-                filter.connect(this.gainStatic);
-                this.gainStatic.connect(this.ctx.destination);
-                whiteNoise.start();
-                this.staticNoiseNode = whiteNoise;
-            }
-
-            // 주파수 볼륨 조절 (경고 시 시끄러워짐)
-            setStaticLevel(volume) {
-                if (this.gainStatic && this.ctx) {
-                    this.gainStatic.gain.linearRampToValueAtTime(volume, this.ctx.currentTime + 0.5);
-                }
-            }
-
-            // 알림음 단발 재생
-            playBeep(freq = 800, duration = 0.1) {
-                if (!this.ctx) return;
-                let osc = this.ctx.createOscillator();
-                let gain = this.ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-                gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
-
-                osc.connect(gain);
-                gain.connect(this.ctx.destination);
-                osc.start();
-                osc.stop(this.ctx.currentTime + duration);
-            }
-
-            // 비상 벨 부저
-            playAlarm() {
-                if (!this.ctx) return;
-                let osc = this.ctx.createOscillator();
-                let gain = this.ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(120, this.ctx.currentTime);
-                osc.frequency.linearRampToValueAtTime(350, this.ctx.currentTime + 0.5);
-                
-                gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
-                gain.gain.linearRampToValueAtTime(0.001, this.ctx.currentTime + 0.5);
-
-                osc.connect(gain);
-                gain.connect(this.ctx.destination);
-                osc.start();
-                osc.stop(this.ctx.currentTime + 0.5);
-            }
-        }
-
-        const sound = new SoundEngine();
-
-        // GAME STATE
-        const state = {
-            gameActive: false,
-            currentTime: { hour: 0, min: 0 },
-            securityLevel: 'SAFE', // SAFE, WARNING, CRITICAL
-            anomalyActive: false,
-            activeAnomalyType: null, // 'B2', 'HEATER', 'PHONE', 'VENT', 'FOOTSTEPS'
-            anomalyTimer: 0,
-            anomalyDurationLimit: 15, // 15초 제한
-            
-            // 컨트롤러 스위치 상태
-            heaterOn: false,
-            phoneAnswered: false,
-            phoneIdle: true,
-            monitorOn: true,
-            speakerCooldown: 0,
-            cam3ShutterClosed: false,
-
-            // 점수/생존 누적 시간용
-            secondTicks: 0,
-            cctvRenderers: []
-        };
-
-        // 로어 보드 원본 데이터
-        const boardPosts = {
-            1: {
-                title: "요즘 밤에 경비실 아저씨가 제 이름을 부르는 것 같아요.",
-                author: "204호 세대주",
-                body: `새벽 두 시쯤 넘으면 저희 방 창 밖에서 똑같이 '민우 아빠, 문 열어봐. 경비실인데 급한 일이야' 하는 경비 아저씨 목소리가 납니다. <br><br>근데 저희는 2층이긴 한데 방범창이 단단히 닫혀있고, 문틀 아래로 물이 찰랑찰랑 거리는 이상한 소리도 나요. <br><br>일단 대답을 안 하고 숨죽이고 있었더니 한 10분쯤 그러다가 복도를 따라 질척거리면서 걸어가더군요. <br><br><span class="text-emerald-500 font-semibold">[댓글 - 관리소장]</span>: 절대 대답하지 마십시오. 현재 저희 야간 경비대원은 관리실 밖으로 자리를 비우지 않고 문을 잠가둔 상태입니다.`
-            },
-            2: {
-                title: "엘리베이터 거울에 자꾸 손자국 남기는 분 누구죠?",
-                author: "302호 거주자",
-                body: `매일 낮에 청소하시는 미화원 이모님이 손 걸레질 다 해놓으셔도, 새벽에 엘리베이터 타보면 거울 가장 높은 곳에 거무튀튀하고 기다란 손자국 같은 게 찍혀 있습니다. <br><br>위치가 적어도 2.5미터는 넘는 곳인데 사람이 정상적으로 까치발 딛고 만질 수 있는 높이가 절대 아니에요. <br><br>가끔 밤에 엘리베이터가 지하 2층으로 멈추려 할 때가 있다고 하던데 그것과 관련이 있는 걸까요? 소름 끼쳐서 밤에는 계단으로 다니렵니다.`
-            },
-            3: {
-                title: "[필독] 새 야간 근무자 보시요 (절대 읽으시오)",
-                author: "전임 관리자 (퇴직)",
-                body: `만약 당신이 이 시스템을 맡았다면 명심하시오. 수칙서는 그냥 겁주려고 쓴 매뉴얼이 아니오. <br><br>거기 적힌 규칙을 그대로 다 행하시오. 특히 <strong>404호 전화</strong>가 울릴 때는 전화 받자마자 당신의 손을 책상 아래로 묶는 편이 나을 겁니다. 흐느끼는 소리가 들린다고 동정하거나 대답하는 순간, 수선로가 아니라 당신 뇌 속의 의식이 뒤틀릴 거요.<br><br>그리고 <strong>환풍구</strong> 소리는 천장이 아주 좁아지는 느낌을 줍니다. 먼지가 떨어지면 즉시 모니터를 끄고, 쥐 죽은 듯 마우스를 제자리에 두시오. 손가락 하나라도 미세하게 떨려 클릭을 해버리면, 환풍구 틈새로 길게 늘어난 목이 내려다볼 것이오. 살아서 다음 교대자에게 관리실 열쇠를 넘겨주시오.`
-            },
-            4: {
-                title: "지하 2층 버튼이 자꾸 눌리는 문제에 대하여",
-                author: "101호 유모씨",
-                body: `우리 빌라는 지하 2층이 없습니다. 애초에 산자락 지형이라 기계실이 있는 지하 1층이 가장 낮습니다. <br><br>그런데 엘리베이터 기판 배선 문제인지, 간혹 밤 늦게 타고 타운으로 내려가려고 보면 'B2'라는 등불이 기괴하게 깜빡거리며 엘리베이터 속도가 엄청나게 빨라집니다. <br><br>만약 문이 열리고 흙탕물 냄새가 섞인 습한 바람이 들어오거든, 절대 내리지 마시고 다시 문 닫힘 버튼을 연타하십시오. 저는 저번에 그 문 밖에서 거꾸로 서 있는 누군가와 눈이 마주쳤습니다.`
-            }
-        };
-
-        // 부트 버튼 동작
-        document.getElementById('btn-boot').addEventListener('click', () => {
-            sound.init();
-            sound.playBeep(1000, 0.3);
-            
-            document.getElementById('boot-screen').classList.add('hidden');
-            state.gameActive = true;
-            appendLog("SYSTEM OPERATIONAL - MONITORING ACTIVE.");
-            appendLog("NOTICE: CH-04 ANOMALY TRACKING MODULE LOADED.");
-            
-            // CCTV 렌더링 루프 가동
-            initCCTVCanvases();
-            
-            // 메인 게임 로프 기동
-            setInterval(gameTick, 1000);
-        });
-
-        // 탭 전환 시스템
-        function switchTab(tabId) {
-            if (!state.gameActive) return;
-            sound.playBeep(600, 0.05);
-
-            document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.add('hidden');
-            });
-            document.querySelectorAll('.tab-btn').forEach(btn => {
-                btn.classList.remove('bg-emerald-950/50', 'text-emerald-300', 'border-emerald-700/60');
-                btn.classList.add('hover:bg-emerald-950/20', 'text-emerald-500', 'border-transparent');
-            });
-
-            document.getElementById(tabId).classList.remove('hidden');
-            const activeBtn = document.getElementById('btn-' + tabId);
-            activeBtn.classList.add('bg-emerald-950/50', 'text-emerald-300', 'border-emerald-700/60');
-            activeBtn.classList.remove('hover:bg-emerald-950/20', 'text-emerald-500', 'border-transparent');
-        }
-
-        // 터미널 로그 추가 함수
-        function appendLog(text, type = 'normal') {
-            const container = document.getElementById('log-container');
-            const log = document.createElement('p');
-            log.className = 'leading-tight';
-            
-            const now = new Date();
-            const timeStr = `[${String(state.currentTime.hour).padStart(2, '0')}:${String(state.currentTime.min).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}]`;
-
-            if (type === 'danger') {
-                log.innerHTML = `<span class="text-red-500 font-bold">${timeStr} [ALERT] ${text}</span>`;
-            } else if (type === 'warning') {
-                log.innerHTML = `<span class="text-amber-500">${timeStr} [WARN] ${text}</span>`;
-            } else if (type === 'success') {
-                log.innerHTML = `<span class="text-emerald-400">${timeStr} [INFO] ${text}</span>`;
-            } else {
-                log.innerHTML = `<span class="text-emerald-700">${timeStr}</span> <span class="text-emerald-400/80">${text}</span>`;
-            }
-
-            container.appendChild(log);
-            container.scrollTop = container.scrollHeight;
-        }
-
-        // 모달 관련 함수
-        function openPostModal(id) {
-            if (!state.gameActive) return;
-            sound.playBeep(700, 0.08);
-            const post = boardPosts[id];
-            if (post) {
-                document.getElementById('modal-title').innerText = post.title;
-                document.getElementById('modal-author').innerText = "작성자: " + post.author;
-                document.getElementById('modal-body').innerHTML = post.body;
-                document.getElementById('board-modal').classList.remove('hidden');
-            }
-        }
-
-        function closePostModal() {
-            sound.playBeep(400, 0.05);
-            document.getElementById('board-modal').classList.add('hidden');
-        }
-
-        // CCTV 화면 노이즈 렌더러
-        function initCCTVCanvases() {
-            const canvases = ['canvas-cam1', 'canvas-cam2', 'canvas-cam3', 'canvas-cam4'];
-            
-            canvases.forEach((id, index) => {
-                const canvas = document.getElementById(id);
-                if (!canvas) return;
-                const ctx = canvas.getContext('2d');
-                
-                // 디바이스 리사이즈 핸들링
-                canvas.width = 300;
-                canvas.height = 150;
-
-                const renderLoop = () => {
-                    if (!state.gameActive) return;
-
-                    // 모니터 전체 블랙아웃 여부
-                    if (!state.monitorOn) {
-                        ctx.fillStyle = '#000000';
-                        ctx.fillRect(0, 0, canvas.width, canvas.height);
-                        requestAnimationFrame(renderLoop);
-                        return;
-                    }
-
-                    // 1. 기초 회색 배경 & 3D 느낌의 원근 격자선 그리기
-                    ctx.fillStyle = '#0a0e10';
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-                    // 렌더링에 깊이를 주기 위한 소실점 중심선들
-                    ctx.strokeStyle = 'rgba(16, 185, 129, 0.05)';
-                    ctx.lineWidth = 1;
-                    
-                    // 각 카메라마다 특색 있는 기본 가이드라인 레이아웃
-                    if (id === 'canvas-cam1') { // 빌라 정원
-                        ctx.beginPath();
-                        ctx.moveTo(0, 120); ctx.lineTo(300, 120); // 바닥선
-                        ctx.moveTo(80, 0); ctx.lineTo(80, 120);  // 빌라 벽면 윤곽
-                        ctx.stroke();
-                        // 빌라 문
-                        ctx.fillStyle = '#020405';
-                        ctx.fillRect(40, 60, 30, 60);
-                    } 
-                    else if (id === 'canvas-cam2') { // 복도
-                        ctx.beginPath();
-                        // 원근 복도 양쪽 벽면
-                        ctx.moveTo(0, 0); ctx.lineTo(100, 50); ctx.lineTo(100, 100); ctx.lineTo(0, 150);
-                        ctx.moveTo(300, 0); ctx.lineTo(200, 50); ctx.lineTo(200, 100); ctx.lineTo(300, 150);
-                        // 저 멀리 끝 벽
-                        ctx.rect(100, 50, 100, 50);
-                        ctx.stroke();
-                    }
-                    else if (id === 'canvas-cam3') { // 엘리베이터
-                        // 셔터 닫힘 여부 체크
-                        if (state.cam3ShutterClosed) {
-                            ctx.fillStyle = '#010502';
-                            ctx.fillRect(0, 0, canvas.width, canvas.height);
-                            ctx.fillStyle = '#10b981';
-                            ctx.font = '10px Courier New';
-                            ctx.fillText("STREAM CLOSED BY WATCHDOG", 70, 75);
-                            requestAnimationFrame(renderLoop);
-                            return;
-                        }
-                        
-                        ctx.beginPath();
-                        ctx.rect(40, 20, 220, 110); // 내부 프레임
-                        ctx.stroke();
-                        // 뒷벽 거울 라인
-                        ctx.strokeRect(90, 35, 120, 70);
-                    }
-                    else if (id === 'canvas-cam4') { // 보일러실
-                        ctx.beginPath();
-                        ctx.arc(150, 60, 25, 0, Math.PI * 2); // 배전반 원형 장치
-                        ctx.moveTo(0, 100); ctx.lineTo(300, 100); // 굵은 배수관 데코
-                        ctx.stroke();
-                    }
-
-                    // 2. 변칙현상 발생 시 기이한 실루엣 드로잉
-                    if (state.anomalyActive) {
-                        ctx.fillStyle = 'rgba(16, 185, 129, 0.4)';
-                        if (state.activeAnomalyType === 'HEATER' && id === 'canvas-cam2') {
-                            // 복도 한가운데 검고 길쭉한 형태
-                            ctx.fillStyle = '#000000';
-                            ctx.beginPath();
-                            ctx.ellipse(150, 100, 12, 45, 0, 0, Math.PI * 2); // 길쭉한 실루엣
-                            ctx.fill();
-                            // 희미한 붉은 광채
-                            ctx.fillStyle = 'rgba(239, 68, 68, 0.3)';
-                            ctx.beginPath();
-                            ctx.arc(150, 65, 4, 0, Math.PI*2);
-                            ctx.fill();
-                        } 
-                        else if (state.activeAnomalyType === 'B2' && id === 'canvas-cam3') {
-                            // 엘리베이터 지하 2층: 붉은색 색조 오염 및 거울 속에 거대한 손자국
-                            ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
-                            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-                            ctx.fillStyle = '#000000';
-                            ctx.font = 'bold 30px sans-serif';
-                            ctx.fillText("B2", 130, 80);
-                        }
-                    }
-
-                    // 3. 실시간 지직거리는 화이트 노이즈 추가 (그레이스케일 난수 픽셀)
-                    const noiseAmount = state.anomalyActive ? 40 : 15;
-                    for (let n = 0; n < noiseAmount; n++) {
-                        const nx = Math.random() * canvas.width;
-                        const ny = Math.random() * canvas.height;
-                        const nw = Math.random() * 80 + 10;
-                        const nh = Math.random() * 1.5;
-                        ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.08})`;
-                        ctx.fillRect(nx, ny, nw, nh);
-                    }
-
-                    // 4. 아날로그 가로 주사선 간섭 효과
-                    ctx.fillStyle = 'rgba(16, 185, 129, 0.03)';
-                    for (let y = 0; y < canvas.height; y += 4) {
-                        ctx.fillRect(0, y + (Math.sin(Date.now() / 100) * 2), canvas.width, 1);
-                    }
-
-                    // 5. 우측 상단 타임코드/CAMID 등 녹색 오버레이 텍스트
-                    ctx.fillStyle = 'rgba(16, 185, 129, 0.7)';
-                    ctx.font = '9px Fira Code, monospace';
-                    const s = String(Math.floor(Math.random()*60)).padStart(2, '0');
-                    ctx.fillText(`REC ${String(state.currentTime.hour).padStart(2,'0')}:${String(state.currentTime.min).padStart(2,'0')}:${s}`, 220, 15);
-
-                    requestAnimationFrame(renderLoop);
-                };
-
-                renderLoop();
-            });
-        }
-
-        // 제어장치 액션 함수들
+    <!-- Right Panel: Narrative Display & Event Choice Panel (lg:col-span-5) -->
+    <div class="lg:col-span-5 flex flex-col gap-6 h-[calc(100vh-140px)] min-h-[500px]">
         
-        // 1. 복도 히터 장치 토글
-        function toggleHeater() {
-            if (!state.gameActive) return;
-            state.heaterOn = !state.heaterOn;
+        <!-- Live Narrative Text Box -->
+        <div class="flex-1 bg-gray-900/80 backdrop-blur border border-gray-800 rounded-2xl p-5 flex flex-col gap-4 shadow-xl overflow-hidden relative">
+            <div class="border-b border-gray-800 pb-2">
+                <span class="text-xs font-bold text-red-400 tracking-wider uppercase"><i class="fa-solid fa-comment-dots mr-1"></i> 관찰 및 생각</span>
+            </div>
             
-            const btn = document.getElementById('btn-heater');
-            const status = document.getElementById('heater-status');
-            
-            if (state.heaterOn) {
-                sound.playBeep(900, 0.15);
-                btn.className = "px-4 py-1.5 bg-amber-950 text-amber-300 border border-amber-500 rounded text-xs hover:bg-amber-900 transition-all font-bold";
-                btn.innerText = "스위치 OFF";
-                status.className = "text-xs font-mono px-2 py-0.5 rounded bg-amber-950/40 text-amber-400 border border-amber-900/50";
-                status.innerText = "가동 중 (ON)";
-                appendLog("2층 복도 마이크로 히터 출력 최대치 도달.");
-            } else {
-                sound.playBeep(450, 0.1);
-                btn.className = "px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded text-xs border border-zinc-700 transition-all font-bold";
-                btn.innerText = "스위치 ON";
-                status.className = "text-xs font-mono px-2 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800";
-                status.innerText = "꺼짐 (OFF)";
-                appendLog("2층 복도 가열 장치 중지됨.");
-            }
-        }
+            <!-- Log Feed Container -->
+            <div id="story-log" class="flex-1 overflow-y-auto space-y-3 text-sm pr-2">
+                <!-- Starting Narrative Text -->
+                <div class="text-gray-400 leading-relaxed border-l-2 border-red-500 pl-3">
+                    <span class="text-xs text-gray-500 block">오후 2:00</span>
+                    "너 대학 입학할 때까지는 이 집에서, 이 방에서 단 한 발자국도 못 나가! 공부나 해!" 엄마의 날카로운 고함 소리가 복도 너머로 메아리쳤다. <br>
+                    그리고 이내 굳게 잠겨버린 육중한 방문 자물쇠 소리가 들렸다. <br>
+                    이 철저히 통제되는 감옥에서 조용히 빠져나가야 한다. 엄마가 눈치채지 못하도록...
+                </div>
+            </div>
 
-        // 2. 404호 전용 인터폰 응답
-        function answerPhone() {
-            if (!state.gameActive || state.phoneAnswered || state.phoneIdle) return;
-            
-            state.phoneAnswered = true;
-            sound.playBeep(500, 0.3);
-            
-            const status = document.getElementById('phone-status');
-            const btnAnswer = document.getElementById('btn-phone-answer');
-            const btnSpeak = document.getElementById('btn-phone-speak');
-            
-            status.innerText = "통화 연결됨 (침묵 상태)";
-            status.className = "text-xs font-mono px-2 py-0.5 rounded bg-blue-950 text-blue-400 border border-blue-900 animate-pulse";
-            btnAnswer.disabled = true;
-            btnAnswer.className = "px-3 py-1.5 bg-zinc-900 text-zinc-600 rounded text-xs border border-zinc-800 font-bold cursor-not-allowed";
-            
-            // 수칙상 비활성화되어 있어야 하는 발화 버튼 활성화 (눌렀다간 즉사 트랩)
-            btnSpeak.disabled = false;
-            btnSpeak.className = "w-full py-1 bg-red-900/20 hover:bg-red-900/40 text-red-500 border border-red-700 rounded text-xs font-bold font-mono transition-all";
-            
-            appendLog("404호 전용선 통화 수립. 경고: 일체의 음성 출력(TALK 버튼)을 자제하고 무음 대치 상태를 견디십시오.", "warning");
-        }
-
-        // 2-1. 절대 눌러서는 안 되는 말하기 단추
-        function speakToPhone() {
-            if (!state.gameActive || !state.phoneAnswered) return;
-            sound.playBeep(200, 0.5);
-            appendLog("당신은 무심결에 인터폰 마이크 스위치를 쥐고 말했습니다. '...여보세요?'", "danger");
-            setTimeout(() => {
-                triggerGameOver("지침 제3조 엄중 불이행: 404호의 빈 침묵 선로에 목소리를 들려주었습니다. 수화기 끝에 존재하던 부패한 전자기적 형체가 당신의 성대 주파수를 복제하여 관리실로 강제 침입했습니다.");
-            }, 1000);
-        }
-
-        // 3. 메인 콘솔 모니터 전원 토글
-        function toggleMonitor() {
-            if (!state.gameActive) return;
-            state.monitorOn = !state.monitorOn;
-            
-            const btn = document.getElementById('btn-monitor');
-            const status = document.getElementById('monitor-status');
-            const blackout = document.getElementById('blackout-screen');
-            
-            if (!state.monitorOn) {
-                sound.playBeep(300, 0.2);
-                btn.innerText = "모니터 ON";
-                status.className = "text-xs font-mono px-2 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800";
-                status.innerText = "꺼짐 (OFFLINE)";
-                blackout.classList.remove('hidden');
-                appendLog("관리 장치 일시 차단됨. 주변 환경 방사 자극 최소화.");
-            } else {
-                sound.playBeep(1100, 0.1);
-                btn.innerText = "모니터 OFF";
-                status.className = "text-xs font-mono px-2 py-0.5 rounded bg-emerald-950/30 text-emerald-400 border border-emerald-900/50";
-                status.innerText = "출력 중 (ONLINE)";
-                blackout.classList.add('hidden');
-                appendLog("콘솔 모니터 그래픽 신호 복구 완료.");
-            }
-        }
-
-        // 4. 경비실 방출 스피커 (발자국 전파 퇴치용)
-        function triggerSpeaker() {
-            if (!state.gameActive || state.speakerCooldown > 0) return;
-            
-            sound.playAlarm();
-            state.speakerCooldown = 5; // 5초간 쿨타임
-            
-            const btn = document.getElementById('btn-speaker');
-            const status = document.getElementById('speaker-status');
-            
-            btn.disabled = true;
-            btn.innerText = "냉각 대기 (5)";
-            btn.className = "px-4 py-1.5 bg-zinc-900 text-zinc-600 rounded text-xs border border-zinc-800 font-bold cursor-not-allowed";
-            status.innerText = "방출 파동 송출 중";
-            status.className = "text-xs font-mono px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-900 animate-pulse";
-            
-            appendLog("비상 외부 방출용 고주파 전파 사이렌 작동.", "warning");
-
-            // 발자국 소리 대처 중이었다면 퇴치 완료
-            if (state.activeAnomalyType === 'FOOTSTEPS') {
-                setTimeout(() => {
-                    resolveAnomaly("경적 음향 충격으로 복도 끝에 서성이던 축축한 기척이 마지못해 후퇴하는 물리 소음이 감지되었습니다.");
-                }, 1000);
-            }
-
-            const cdInterval = setInterval(() => {
-                state.speakerCooldown--;
-                if (state.speakerCooldown <= 0) {
-                    clearInterval(cdInterval);
-                    btn.disabled = false;
-                    btn.innerText = "방출음 송출";
-                    btn.className = "px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded text-xs border border-zinc-700 transition-all font-bold";
-                    status.innerText = "송출 차단됨";
-                    status.className = "text-xs font-mono px-2 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800";
-                } else {
-                    btn.innerText = `냉각 대기 (${state.speakerCooldown})`;
-                }
-            }, 1000);
-        }
-
-        // 5. CAM-03 엘리베이터 감시 셔터 제어
-        function toggleCam3Shutter() {
-            if (!state.gameActive) return;
-            state.cam3ShutterClosed = !state.cam3ShutterClosed;
-            
-            const btn = document.getElementById('btn-cam3-shutter');
-            const dot = document.getElementById('cam3-dot');
-            
-            if (state.cam3ShutterClosed) {
-                sound.playBeep(400, 0.15);
-                btn.innerText = "OPEN STREAM";
-                btn.className = "px-2 py-0.5 bg-red-950 hover:bg-red-900 text-red-400 rounded text-[9px] border border-red-800 font-bold uppercase animate-pulse";
-                dot.className = "w-1.5 h-1.5 rounded-full bg-red-600";
-                appendLog("CAM-03 엘리베이터 동축 차단막 강제 폐쇄.");
+            <!-- Active Object Action Card -->
+            <div id="action-panel" class="bg-gray-950 border border-gray-800 rounded-xl p-4 mt-auto">
+                <h3 id="action-panel-title" class="text-sm font-bold text-amber-400 mb-2"><i class="fa-solid fa-circle-info mr-1"></i> 조사를 진행하려면 사물을 클릭하세요</h3>
+                <p id="action-panel-desc" class="text-xs text-gray-400 leading-relaxed mb-4">현재 방안의 여러 사물들을 조사할 수 있습니다. 수색에는 시간이 들며 예기치 않은 소음을 유발해 엄마의 의심을 살 수 있으니 매사 주의하십시오.</p>
                 
-                // 지하 2층 이상현상 대처 성공 여부 판정
-                if (state.activeAnomalyType === 'B2') {
-                    setTimeout(() => {
-                        resolveAnomaly("엘리베이터의 신호를 차단하여 화면 너머의 시선을 완벽히 회피했습니다. 엘리베이터가 지상 1층으로 복귀했습니다.");
-                    }, 1500);
-                }
-            } else {
-                sound.playBeep(850, 0.1);
-                btn.innerText = "CLOSE STREAM";
-                btn.className = "px-2 py-0.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded text-[9px] border border-zinc-800 font-bold uppercase";
-                dot.className = "w-1.5 h-1.5 rounded-full bg-emerald-500";
-                appendLog("CAM-03 비디오 세션 원격 재개.");
-            }
+                <!-- Action Buttons Render Container -->
+                <div id="action-buttons-container" class="flex flex-col gap-2">
+                    <!-- Dynamic choices load here -->
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</main>
+
+
+<!-- Fullscreen Game Over / Ending Modal Overlay -->
+<div id="ending-screen" class="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4 hidden">
+    <div class="max-w-xl w-full bg-gray-900 border-2 border-red-900 rounded-2xl p-8 text-center shadow-2xl relative overflow-hidden">
+        <div class="absolute inset-0 bg-radial-gradient from-red-900/20 to-transparent pointer-events-none"></div>
+        <div id="ending-icon" class="text-6xl text-red-600 mb-6 animate-pulse">
+            <i class="fa-solid fa-skull"></i>
+        </div>
+        <h2 id="ending-title" class="text-2xl md:text-3xl font-extrabold text-red-500 mb-4">엄마에게 걸리고 말았습니다.</h2>
+        <div id="ending-desc" class="text-gray-300 text-sm md:text-base leading-relaxed mb-8 max-h-[250px] overflow-y-auto pr-2">
+            컴퓨터 구동 소리가 너무 컸던 탓일까? 혹은 옷장이 삐걱거렸던 탓일까? 거칠게 열린 문틈 새로 서슬 퍼런 눈의 엄마가 서 있었다. "내가 공부하랬지!!" 
+            결국 당신의 모든 소지품을 빼앗겼고, 창문까지 용접기로 차단되었습니다. 이제 탈출은 절대 불가능합니다.
+        </div>
+        <button onclick="resetGame()" class="bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-extrabold py-3.5 px-8 rounded-xl shadow-lg transition duration-200 transform hover:scale-105">
+            운명에 다시 도전하기 (다시 시작)
+        </button>
+    </div>
+</div>
+
+<!-- Brief Quick Alert Popup (Custom Modal) -->
+<div id="toast" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 border border-gray-800 text-gray-100 text-xs px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 z-50 opacity-0 pointer-events-none transition-all duration-300">
+    <i class="fa-solid fa-circle-exclamation text-amber-400" id="toast-icon"></i>
+    <span id="toast-message">의심스러운 소리를 냈습니다. 엄마가 귀를 기울입니다...</span>
+</div>
+
+<!-- START SCREEN OVERLAY -->
+<div id="start-screen" class="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4">
+    <div class="max-w-2xl w-full bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl text-center relative">
+        <div class="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-red-600 text-white font-black py-2 px-6 rounded-full text-xs tracking-widest uppercase shadow-lg">
+            SENSITIVE ESCAPE GAME
+        </div>
+        <h1 class="text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-amber-400 to-red-600 mb-4 mt-4">엄마의 감시 피하기</h1>
+        <p class="text-gray-400 text-sm leading-relaxed mb-8 max-w-lg mx-auto">
+            당신은 숨이 막힐 듯한 과보호와 통제를 강요하는 엄마로부터 벗어나 가출을 단행하기로 마음먹었습니다. 방 안에 단서들을 꼼꼼하게 찾고, 소음을 내지 않도록 조심하면서 자물쇠를 따고 현관문 비밀번호를 획득해 최종 탈출해야 합니다.
+        </p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-left text-xs text-gray-400 mb-8 max-w-lg mx-auto bg-gray-950 p-4 rounded-xl border border-gray-800">
+            <div>
+                <strong class="text-red-400 block mb-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i> 엄마의 의심도 관리</strong>
+                서랍을 소리 나게 뒤지거나, 가전제품을 사용하는 일련의 소음은 의심도를 높입니다. 100%가 되면 즉시 들키게 됩니다.
+            </div>
+            <div>
+                <strong class="text-blue-400 block mb-1"><i class="fa-solid fa-brain mr-1"></i> 멘탈 유지</strong>
+                엄마의 폭언이나 과한 공부, 강한 압박 속에서 멘탈이 소진되면 좌절을 겪고 무기력한 아이로 평생 살아가게 됩니다.
+            </div>
+        </div>
+
+        <button onclick="startGame()" class="bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-extrabold text-base py-4 px-10 rounded-xl shadow-xl transition duration-200 transform hover:scale-105">
+            감금에서 탈출하기 (게임 시작)
+        </button>
+    </div>
+</div>
+
+
+<script>
+    // Game Core State Variables
+    const state = {
+        location: 'room', // 'room', 'hallway'
+        suspicion: 10,
+        mental: 100,
+        time: { hour: 14, minute: 0 },
+        inventory: [],
+        clues: {
+            bobbyPinFound: false,
+            screwdiverFound: false,
+            diaryRead: false,
+            pcHacked: false,
+            livingRoomInspected: false,
+            momShowerTriggered: false,
+            phoneInterpreted: false,
+            safePasswordFound: false,
+            safetyLimiterRemoved: false
+        },
+        activeEvent: null,
+        soundEnabled: false,
+        isHiding: false,
+        hidingLocation: null, // 'bed', 'wardrobe'
+        footstepTimer: null,
+        footstepCountDown: 5,
+        ticksToNextFootstep: 8, // Ticks (actions) before Mom walks by
+        roomDoorUnlocked: false,
+        frontDoorTries: 0,
+        synth: null,
+        // Lockpicking variables
+        lockpickSuccesses: 0,
+        lockpickTimer: null,
+        cursorPos: 0,
+        cursorDir: 1,
+        cursorSpeed: 2.5
+    };
+
+    // Item Definitions & Icons
+    const ITEM_TEMPLATES = {
+        'bobby_pin': { name: '머리핀', icon: 'fa-solid fa-wrench', desc: '자물쇠를 딸 때 아주 유용한 실핀이다.', color: 'text-amber-300 bg-amber-950/40 border-amber-900/50' },
+        'screwdriver': { name: '일자 드라이버', icon: 'fa-solid fa-screwdriver', desc: '창문 이중 잠금 턱의 나사를 풀어낼 수 있다.', color: 'text-teal-400 bg-teal-950/40 border-teal-900/50' },
+        'pocket_money': { name: '엄마의 비상금 (5만원)', icon: 'fa-solid fa-money-bill-wave', desc: '탈출 후 버스를 타거나 여비를 충당할 유일한 수단.', color: 'text-green-400 bg-green-950/40 border-green-900/50' },
+        'mom_phone': { name: '엄마의 스마트폰', icon: 'fa-solid fa-mobile-screen-button', desc: '엄마의 메시지 기록과 수사 일정이 기록되어 있다.', color: 'text-purple-400 bg-purple-950/40 border-purple-900/50' },
+        'master_key': { name: '안방 서랍 열쇠', icon: 'fa-solid fa-key', desc: '현관 마스터 키나 엄마 지갑이 든 정체불명의 금고를 열 수 있을 것 같다.', color: 'text-yellow-400 bg-yellow-950/40 border-yellow-900/50' },
+        'front_key': { name: '현관 마스터 키', icon: 'fa-solid fa-id-card', desc: '도어락 비밀번호 이외에 이중 실린더 장치를 풀 수 있는 열쇠.', color: 'text-red-400 bg-red-950/40 border-red-900/50' }
+    };
+
+    // Start Screen Closure
+    function startGame() {
+        document.getElementById('start-screen').classList.add('hidden');
+        initSound();
+        playBeep(220, 0.1);
+        playBeep(440, 0.2);
+        addLog("주변 사물을 클릭해 탈출을 모색하세요. 시간이 지나면 위험해집니다.", "system");
+        startTickSystem();
+    }
+
+
+    // Web Audio Synthesizer init using Tone.js or native fallback
+    function initSound() {
+        try {
+            state.synth = new Tone.Synth().toDestination();
+            state.soundEnabled = true;
+            updateSoundButtonUI();
+        } catch (e) {
+            console.warn("Tone.js could not initialize, using mock audio.", e);
+        }
+    }
+
+    function toggleSound() {
+        state.soundEnabled = !state.soundEnabled;
+        if (state.soundEnabled && !state.synth) {
+            initSound();
+        }
+        updateSoundButtonUI();
+    }
+
+    function updateSoundButtonUI() {
+        const btn = document.getElementById('sound-toggle-btn');
+        if (state.soundEnabled) {
+            btn.innerHTML = '<i class="fa-solid fa-volume-high"></i>';
+            btn.className = "bg-gray-800 hover:bg-gray-700 p-2 rounded-lg text-teal-400 hover:text-teal-300 transition duration-200";
+        } else {
+            btn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i>';
+            btn.className = "bg-gray-800 hover:bg-gray-700 p-2 rounded-lg text-gray-500 hover:text-gray-400 transition duration-200";
+        }
+    }
+
+    // Audio Helpers
+    function playBeep(freq, duration) {
+        if (!state.soundEnabled || !state.synth) return;
+        try {
+            state.synth.triggerAttackRelease(freq, duration);
+        } catch (e) {}
+    }
+
+    function playSiren() {
+        if (!state.soundEnabled) return;
+        try {
+            const osc = new Tone.Oscillator().toDestination();
+            osc.frequency.setValueAtTime(300, Tone.now());
+            osc.frequency.linearRampToValueAtTime(600, Tone.now() + 0.5);
+            osc.frequency.linearRampToValueAtTime(300, Tone.now() + 1.0);
+            osc.start().stop("+1.2");
+        } catch(e) {}
+    }
+
+    function playSuccess() {
+        if (!state.soundEnabled) return;
+        try {
+            const now = Tone.now();
+            state.synth.triggerAttackRelease("C4", 0.1, now);
+            state.synth.triggerAttackRelease("E4", 0.1, now + 0.15);
+            state.synth.triggerAttackRelease("G4", 0.1, now + 0.3);
+            state.synth.triggerAttackRelease("C5", 0.3, now + 0.45);
+        } catch(e) {}
+    }
+
+    function playClick() {
+        playBeep(330, 0.05);
+    }
+
+
+    // Advance Time & Event Trigger
+    function advanceTime(minutes) {
+        state.time.minute += minutes;
+        if (state.time.minute >= 60) {
+            state.time.hour += Math.floor(state.time.minute / 60);
+            state.time.minute %= 60;
+        }
+        if (state.time.hour >= 24) state.time.hour %= 24;
+
+        // Render time
+        const ampm = state.time.hour >= 12 ? '오후' : '오전';
+        const displayHour = state.time.hour > 12 ? state.time.hour - 12 : (state.time.hour === 0 ? 12 : state.time.hour);
+        const formatMin = state.time.minute < 10 ? '0' + state.time.minute : state.time.minute;
+        document.getElementById('game-time').textContent = `${ampm} ${displayHour}:${formatMin}`;
+
+        // Decrement tick counter for random Footstep Events
+        state.ticksToNextFootstep--;
+        if (state.ticksToNextFootstep <= 0 && !state.isHiding) {
+            triggerFootstepsEvent();
         }
 
-        // 마우스 무반응 체크용 변수
-        let mouseMovedThisSecond = false;
-        window.addEventListener('mousemove', () => {
-            mouseMovedThisSecond = true;
-        });
+        // Mom shower progression
+        if (state.clues.momShowerTriggered) {
+            // Once shower starts, you have 15 actions before she finishes!
+            showToast("욕실 방향에서 샤워 물소리가 강하게 쏟아져 내립니다.");
+        }
+    }
 
-        // 60초/1분 단위를 빠르게 돌려서 실제 시간을 게임 시간(1시간 = 50초)으로 조절하는 실시간 루프
-        function gameTick() {
-            if (!state.gameActive) return;
+    function updateStats() {
+        // Enforce boundary limits
+        state.suspicion = Math.max(0, Math.min(100, state.suspicion));
+        state.mental = Math.max(0, Math.min(100, state.mental));
 
-            state.secondTicks++;
+        // UI Updates
+        document.getElementById('suspicion-text').textContent = `${state.suspicion}%`;
+        document.getElementById('suspicion-bar').style.width = `${state.suspicion}%`;
+        
+        document.getElementById('mental-text').textContent = `${state.mental}%`;
+        document.getElementById('mental-bar').style.width = `${state.mental}%`;
+
+        // Check lose conditions
+        if (state.suspicion >= 100) {
+            triggerEnding('caught_mom');
+        } else if (state.mental <= 0) {
+            triggerEnding('mental_breakdown');
+        }
+    }
+
+    // Footstep Intrusion Event (Real-time countdown tension)
+    function triggerFootstepsEvent() {
+        if (state.location === 'hallway' || state.location === 'bathroom') {
+            // If caught in hallway, instant chase event or caught
+            addLog("!! 복도 너머에서 엄마가 갑자기 나타났습니다 !!", "danger");
+            triggerEnding('caught_hallway');
+            return;
+        }
+
+        playSiren();
+        state.isHiding = false;
+        state.footstepCountDown = 5;
+        document.getElementById('footstep-alert').classList.remove('hidden');
+        document.getElementById('alert-countdown').textContent = state.footstepCountDown;
+
+        state.footstepTimer = setInterval(() => {
+            state.footstepCountDown--;
+            document.getElementById('alert-countdown').textContent = state.footstepCountDown;
             
-            // 시계 업데이트 (현실 시간 50초가 게임 시간 1시간)
-            state.currentTime.min += 1.2; // 1초에 약 1.2분
-            if (state.currentTime.min >= 60) {
-                state.currentTime.min = 0;
-                state.currentTime.hour++;
-                sound.playBeep(1200, 0.4);
-                appendLog(`정시 경보: 오전 0${state.currentTime.hour}:00 가 도래했습니다.`, "success");
+            if (state.footstepCountDown <= 0) {
+                clearInterval(state.footstepTimer);
+                checkFootstepResolution();
             }
+        }, 1000);
+    }
 
-            // 시계 출력 업데이트
-            document.getElementById('game-clock').innerText = 
-                `${String(state.currentTime.hour).padStart(2, '0')}:${String(Math.floor(state.currentTime.min)).padStart(2, '0')} AM`;
+    // Resolve if hiding succeeded
+    function checkFootstepResolution() {
+        document.getElementById('footstep-alert').classList.add('hidden');
+        
+        if (state.isHiding) {
+            playBeep(180, 0.4);
+            addLog(`엄마가 문고리를 덜컥였습니다. 다행히 ${state.hidingLocation === 'bed' ? '침대 밑' : '옷장'}에 깊숙히 숨어 들키지 않았습니다. "방에 잘 처박혀 있네..."`, "success");
+            state.suspicion = Math.max(10, state.suspicion - 15);
+            state.mental = Math.max(10, state.mental - 10); // Hiding is stressful
+        } else {
+            addLog("방 한가운데 멀뚱히 서 있는 당신을 발견한 엄마가 격노했습니다!", "danger");
+            triggerEnding('caught_mom');
+        }
 
-            // 게임 클리어 판정: 오전 6시
-            if (state.currentTime.hour >= 6) {
-                triggerVictory();
-                return;
-            }
+        state.isHiding = false;
+        state.hidingLocation = null;
+        state.ticksToNextFootstep = Math.floor(Math.random() * 6) + 7; // Next event logic
+        updateStats();
+    }
 
-            // 마우스 움직임 감지 초기화용
-            let currentMouseState = mouseMovedThisSecond;
-            mouseMovedThisSecond = false;
 
-            // 변칙 현상 체크 및 처리 루프
-            if (state.anomalyActive) {
-                state.anomalyTimer--;
-                document.getElementById('danger-timer').innerText = `TIME LIMIT: ${state.anomalyTimer}s`;
-                sound.setStaticLevel(0.08); // 공습 중엔 지직거림 심해짐
+    // Inspect Elements
+    function inspectElement(elementId) {
+        playClick();
+        const title = document.getElementById('action-panel-title');
+        const desc = document.getElementById('action-panel-desc');
+        const btnContainer = document.getElementById('action-buttons-container');
 
-                // 4. 환풍구 습격 대처 중 마우스를 움직였는지 검출
-                if (state.activeAnomalyType === 'VENT' && state.monitorOn === false) {
-                    if (currentMouseState) {
-                        triggerGameOver("지침 제4조 엄중 불이행: 환풍구 기척 속에서 미세하게 마우스를 조작했습니다. 마우스 딸깍 소리와 포인터 전력 광원이 가이드라인이 되어 천장 그릴이 뜯어지며 그것이 목을 늘여 떨어졌습니다.");
-                        return;
+        // Clear dynamic action button layout
+        btnContainer.innerHTML = '';
+
+        // Dispatch based on Room vs Hallway items
+        switch (elementId) {
+            case 'bed':
+                title.innerHTML = '<i class="fa-solid fa-bed text-amber-500 mr-2"></i>내 침대';
+                desc.textContent = "방 한켠에 있는 낡고 삐걱거리는 싱글 침대입니다. 이불 아래나 베개 밑을 더듬어 단서를 찾아볼 수 있습니다.";
+                
+                addButton("침대 아래 & 베개 밑 자세히 뒤지기 (10분, 의심도 +5)", () => {
+                    advanceTime(10);
+                    state.suspicion += 5;
+                    if (!state.clues.bobbyPinFound) {
+                        state.clues.bobbyPinFound = true;
+                        acquireItem('bobby_pin');
+                        addLog("침대 밑 먼지 구덩이 속에서 이전에 버려둔 단단한 '머리핀(실핀)'을 발견했습니다! 이것으로 문고리를 건드릴 수 있을지도 모릅니다.", "success");
+                    } else {
+                        addLog("베개 밑에는 낡은 인형과 수학 오답노트 뿐입니다. 뒤적거리는 기분 나쁜 소리에 엄마가 움찔했을 수 있습니다.", "neutral");
                     }
-                }
+                    updateStats();
+                    inspectElement('bed');
+                });
 
-                if (state.anomalyTimer <= 0) {
-                    // 시간 초과 즉사 조건 판정
-                    handleAnomalyTimeout();
-                    return;
-                }
+                addButton("침대에 잠시 누워 쉬기 (15분, 멘탈 +20, 의심도 +10)", () => {
+                    advanceTime(15);
+                    state.mental = Math.min(100, state.mental + 20);
+                    state.suspicion += 10;
+                    addLog("침대에 눈을 붙이고 극심한 심적 스트레스를 달랬습니다. 하지만 방심한 사이 엄마의 눈길이 의심스러워집니다.", "success");
+                    updateStats();
+                    inspectElement('bed');
+                });
+                break;
 
-                // 각 변칙현상의 조기 해제 점검 (액션으로 이미 해결하지 못했을 때의 상시 추적)
-                checkAnomalyResolution();
+            case 'desk':
+                title.innerHTML = '<i class="fa-solid fa-desktop text-blue-400 mr-2"></i>책상과 컴퓨터';
+                desc.textContent = "먼지 하나 없이 닦여있는 모범생 전용 독서실 책상입니다. 서랍은 고정 잠금식 자물쇠로 잠겨 있고, 컴퓨터 화면은 검게 꺼져 있습니다.";
+
+                addButton("서랍을 힘껏 뜯어보기 (5분, 의심도 +25)", () => {
+                    advanceTime(5);
+                    state.suspicion += 25;
+                    addLog("서랍을 힘주어 당겨 틈새를 벌렸습니다! '콰쾅'하며 금속음이 발생했습니다! 서랍 안에서 꼬깃꼬깃 접힌 '엄마의 일정 계획서'를 강제로 뜯어냈습니다.", "danger");
+                    state.clues.diaryRead = true;
+                    addLog("[정보 획득] 일정표에 따르면, 엄마는 매일 오후 2시 반에 '욕실에서 30분간 전신 샤워'를 하는 고집스러운 습관이 있습니다. 그 시간이 기회입니다!", "success");
+                    updateStats();
+                    inspectElement('desk');
+                });
+
+                if (!state.clues.pcHacked) {
+                    addButton("조용히 컴퓨터 부팅하기 (10분, 의심도 +15)", () => {
+                        advanceTime(10);
+                        state.suspicion += 15;
+                        addLog("본체 팬 소음이 미세하게 방에 맴돕니다. 로그인 화면이 켜졌습니다. 암호 입력기가 표시됩니다.", "neutral");
+                        
+                        // Password prompt custom implementation instead of prompt()
+                        promptPCWord();
+                    });
+                } else {
+                    addButton("해킹된 컴퓨터 메신저 이력 분석 (5분)", () => {
+                        advanceTime(5);
+                        addLog("엄마의 일기 데이터가 보입니다: '우리 착한 첫째 아기... 성적 부진했던 05월 12일은 내 생애 가장 최악의 상처였다.' 이것이 비밀번호 힌트였군요.", "success");
+                        addLog("[단서 해석] 현관 도어락 비밀번호는 성적표에 찍혀있던 날짜 '0512'일 가능성이 농후합니다!", "success");
+                        state.clues.phoneInterpreted = true;
+                    });
+                }
+                break;
+
+            case 'door':
+                title.innerHTML = '<i class="fa-solid fa-door-closed text-red-500 mr-2"></i>방문';
+                desc.textContent = "두껍게 방음 덮개까지 발라놓은 원목 문입니다. 밖에서 열쇠식 자물쇠로 잠가 둔 탓에 내부 손잡이만으로는 돌아가지 않습니다.";
+
+                addButton("문에 귀를 바싹 대고 바깥 기척 엿듣기 (5분)", () => {
+                    advanceTime(5);
+                    playBeep(150, 0.3);
+                    if (state.ticksToNextFootstep <= 2) {
+                        addLog("문 밖 복도에서 묵직하고 신경질적인 발걸음 소리가 가까워집니다. 조심하십시오!", "danger");
+                    } else {
+                        addLog("바깥 거실에서 TV 연속극 흘러가는 소리와 물 끓는 소리 등 고요한 가구 활동음이 감지됩니다.", "neutral");
+                    }
+                    updateStats();
+                });
+
+                if (hasItem('bobby_pin')) {
+                    addButton("머리핀으로 방문 실린더 자물쇠 따기 시도 (소요시간 가변)", () => {
+                        startLockpickingGame();
+                    });
+                } else {
+                    addButton("주변에 문을 딸 도구가 없는지 찾아보자... (수색 필요)", null, true);
+                }
+                break;
+
+            case 'wardrobe':
+                title.innerHTML = '<i class="fa-solid fa-door-open text-purple-500 mr-2"></i>옷장';
+                desc.textContent = "두껍고 튼튼한 장롱입니다. 겨울 옷들과 이불들이 빼곡히 들어차 있어, 유사시 숨기에 가장 적격입니다.";
+
+                addButton("두꺼운 코트 주머니들 샅샅이 뒤지기 (10분, 의심도 +5)", () => {
+                    advanceTime(10);
+                    state.suspicion += 5;
+                    if (!state.clues.safePasswordFound) {
+                        state.clues.safePasswordFound = true;
+                        addLog("안쪽 가죽자켓 주머니 속에서 먼지투성이의 작은 쪽지를 찾아냈습니다! 쪽지에는 낙서가 쓰여 있습니다: [현관 이중 열쇠는 안방 보석상자에 소중히 보관함]", "success");
+                    } else {
+                        addLog("나머지 주머니는 휴지 조각뿐입니다. 살짝 비벼지는 소리가 옷장 밖으로 흘러나갔습니다.", "neutral");
+                    }
+                    updateStats();
+                });
+
+                addButton("옷장 안 빈자리에 수색물들을 숨겨두기", () => {
+                    addLog("가방 속의 주요 탈출 도구들을 옷장 안 깊숙한 상자에 숨겨, 엄마에게 불심검문을 당해도 안전하게 만들었습니다.", "success");
+                    playBeep(400, 0.1);
+                });
+                break;
+
+            case 'window':
+                title.innerHTML = '<i class="fa-regular fa-window-maximize text-teal-400 mr-2"></i>잠긴 창문';
+                desc.textContent = "외부는 3층 높이의 난간입니다. 에어컨 실외기가 아슬아슬하게 보이는 이중창이지만, 나사로 고정된 강력한 아동 추락 방지용 스토퍼(Limiter)가 박혀 있어 열리지 않습니다.";
+
+                if (hasItem('screwdriver')) {
+                    addButton("드라이버로 방지용 스토퍼 나사 분해하기 (15분, 의심도 +15)", () => {
+                        advanceTime(15);
+                        state.suspicion += 15;
+                        state.clues.safetyLimiterRemoved = true;
+                        addLog("치익치익 소리를 참아내며 드라이버를 단단히 나사에 끼워 비틀었습니다. 탁! 하는 소리와 함께 이중창 제어 고정장치가 바닥에 굴러떨어졌습니다! 이제 창문을 자유롭게 열어젖힐 수 있습니다.", "success");
+                        updateStats();
+                        inspectElement('window');
+                    });
+                } else if (state.clues.safetyLimiterRemoved) {
+                    addButton("창문을 열고 실외기 난간을 타고 3층에서 아래 가스관으로 뛰어내리기 (가출 시도)", () => {
+                        triggerEnding('jump_window');
+                    });
+                } else {
+                    addButton("안전 제한 장치가 나사로 박혀있어 풀 '일자 드라이버' 같은 도구가 절실하다.", null, true);
+                }
+                break;
+
+            case 'trash':
+                title.innerHTML = '<i class="fa-solid fa-trash-can text-gray-400 mr-2"></i>쓰레기통 & 모퉁이';
+                desc.textContent = "각종 구겨진 모의고사 시험지와 영어 단어장이 흩뿌려져 있는 조그마한 휴지통입니다.";
+
+                addButton("구겨진 모의고사 시험지 펼쳐 뒤지기 (5분)", () => {
+                    advanceTime(5);
+                    addLog("엄마가 빨간색 사인펜으로 비정상적으로 분노의 가위표(X)를 쳐놓은 시험지를 발견했습니다. 구석에 작은 손글씨로 엄마가 '전교 1등 못한 벌로 컴퓨터 잠금 암호를 변경함' 이라고 써 놓은 분노의 필체가 선명합니다.", "neutral");
+                });
+                break;
+
+
+            // Hallway Elements
+            case 'hall-myroom':
+                title.innerHTML = '<i class="fa-solid fa-arrow-left text-teal-500 mr-2"></i>내 방으로 귀환';
+                desc.textContent = "탈출의 베이스캠프인 내 방으로 돌아갑니다. 언제든지 문을 닫아 안정을 되찾을 수 있습니다.";
+                addButton("내 방 안전지대로 문 닫고 들어가기", () => {
+                    changeLocation('room');
+                });
+                break;
+
+            case 'hall-momroom':
+                title.innerHTML = '<i class="fa-solid fa-door-closed text-rose-500 mr-2"></i>엄마 안방';
+                desc.textContent = "엄마의 가장 은밀하고 신성불가침의 공간입니다. 화려한 장롱과 화장대, 그리고 소형 금고가 눈에 들어옵니다.";
+                
+                addButton("엄마 안방 화장대 서랍 수색 (10분, 의심도 +30)", () => {
+                    advanceTime(10);
+                    state.suspicion += 30;
+                    if (!hasItem('master_key')) {
+                        acquireItem('master_key');
+                        addLog("화장대 맨 아래 보석함 뒤편에서 비밀스러운 황동 열쇠 '안방 서랍 열쇠'를 탈취했습니다!", "success");
+                    } else {
+                        addLog("안방의 화장대에는 온갖 통제용 약과 화장품들 외에는 새로운 가치가 없습니다.", "neutral");
+                    }
+                    updateStats();
+                });
+
+                if (hasItem('master_key')) {
+                    addButton("황동 열쇠로 벽장 안의 소형 비밀 금고 해제하기 (10분)", () => {
+                        advanceTime(10);
+                        if (!hasItem('front_key')) {
+                            acquireItem('front_key');
+                            addLog("금고가 매끄럽게 돌아가며 열립니다! 안에 고이고이 비단에 싸여 보관되어 있던 '현관 마스터 실린더 키'를 손에 넣었습니다!", "success");
+                        } else {
+                            addLog("비밀 금고는 텅 비어 있습니다.", "neutral");
+                        }
+                    });
+                }
+                break;
+
+            case 'hall-bathroom':
+                title.innerHTML = '<i class="fa-solid fa-bath text-sky-400 mr-2"></i>공용 욕실';
+                desc.textContent = "환풍기 소리가 조용하게 울려퍼지는 세련된 욕실입니다.";
+
+                if (state.clues.momShowerTriggered) {
+                    addButton("샤워 소리를 틈타 비치된 '일자 드라이버' 집어들기 (3분)", () => {
+                        advanceTime(3);
+                        if (!state.clues.screwdiverFound) {
+                            state.clues.screwdiverFound = true;
+                            acquireItem('screwdriver');
+                            addLog("세면대 거울 수납장 수리 공구 보관함에서 녹이 슬지 않은 '일자 드라이버'를 무사히 손에 넣었습니다!", "success");
+                        } else {
+                            addLog("이미 공구함은 비어있습니다.", "neutral");
+                        }
+                    });
+                } else {
+                    addButton("조심히 수납공간 물색하기 (엄마가 깨어있을 때라 너무 조심스럽다)", () => {
+                        addLog("아직 엄마가 샤워를 시작하지 않아 욕실에 다가가는 것조차 발자국 소리가 들릴 위험이 큽니다. 엄마의 스케줄에 귀를 기울이세요.", "danger");
+                    });
+                }
+                break;
+
+            case 'hall-livingroom':
+                title.innerHTML = '<i class="fa-solid fa-couch text-amber-500 mr-2"></i>거실 및 부엌';
+                desc.textContent = "엄마가 주로 앉아있거나 가사 가위질을 하시는 대형 테이블이 놓여있습니다. 벽에는 CCTV 모니터 패널 같은 감시 체계가 설치되어 있습니다.";
+
+                addButton("식탁 위에 뒤집어져 있는 엄마 스마트폰 무단 조사하기 (10분, 의심도 +25)", () => {
+                    advanceTime(10);
+                    state.suspicion += 25;
+                    if (!hasItem('mom_phone')) {
+                        acquireItem('mom_phone');
+                        addLog("엄마의 무방비 상태였던 스마트폰을 은밀하게 가로챘습니다! 화면 잠금 패턴은 다행히 내 예전 성적 일자로 풀렸습니다.", "success");
+                    } else {
+                        addLog("거실 테이블 위에는 성적 압박 스티커들 뿐입니다.", "neutral");
+                    }
+                    updateStats();
+                });
+
+                addButton("거실 정수기 뒤 수납장 수색 (5분, 의심도 +10)", () => {
+                    advanceTime(5);
+                    state.suspicion += 10;
+                    if (!hasItem('pocket_money')) {
+                        acquireItem('pocket_money');
+                        addLog("정수기 필터 교환 통 뒤편에 꽁꽁 싸매져 숨겨두었던 5만원 비상금 뭉치를 가로챘습니다!", "success");
+                    } else {
+                        addLog("먼지만 펄펄 납니다. 기침이 날 뻔한 것을 꾹 참았습니다.", "neutral");
+                    }
+                    updateStats();
+                });
+                break;
+
+            case 'hall-frontdoor':
+                title.innerHTML = '<i class="fa-solid fa-right-from-bracket text-red-500 mr-2"></i>현관문 (마지막 탈출로)';
+                desc.textContent = "탈출을 가로막는 무거운 철제 방화문입니다. 최첨단 도어락 패널과, 하단에 별도로 보조 열쇠를 돌려 젖히는 이중 원통 자물쇠 실린더 장치로 이중 잠금 설계가 되어 있습니다.";
+
+                addButton("스마트 도어락 패널 암호 4자리 수동 대입하기 (5분)", () => {
+                    promptDoorPassword();
+                });
+
+                if (hasItem('front_key')) {
+                    addButton("가방 속에 있는 '현관 마스터 키'로 하단 원통 실린더 이중 잠금 수동 해제하기 (5분)", () => {
+                        advanceTime(5);
+                        addLog("찰칵! 무거운 기계음과 함께 보조 실린더 자물쇠가 풀렸습니다! 이제 도어락 암호만 해결하면 완전히 집 밖으로 자유입니다!", "success");
+                        state.clues.safetyLimiterRemoved = true; // reusing to mark mechanical unlock
+                    });
+                } else {
+                    addButton("하단 이중 실린더 열쇠구멍은 기계식 전용 열쇠(마스터 키)가 없으면 풀 수 없습니다.", null, true);
+                }
+                break;
+
+            case 'hall-closet':
+                title.innerHTML = '<i class="fa-solid fa-box-archive text-stone-400 mr-2"></i>복도 수납장';
+                desc.textContent = "각종 청소 도구와 휴지 롤이 보관되어 있는 긴 장식장입니다.";
+
+                addButton("수납장 밑바닥 헤집기 (5분)", () => {
+                    advanceTime(5);
+                    addLog("청소도구 외에는 특별한 자산이 없습니다.", "neutral");
+                });
+                break;
+        }
+    }
+
+    // Helper: Build Game Action Button
+    function addButton(text, action, disabled = false) {
+        const btnContainer = document.getElementById('action-buttons-container');
+        const btn = document.createElement('button');
+        btn.className = disabled 
+            ? "w-full bg-gray-950 text-gray-600 border border-gray-900 text-xs font-semibold py-2.5 px-3 rounded-lg text-left cursor-not-allowed"
+            : "w-full bg-gray-900 hover:bg-gray-800 text-gray-200 border border-gray-800 text-xs font-semibold py-2.5 px-3 rounded-lg text-left transition duration-200 hover:text-white flex items-center justify-between";
+        
+        btn.innerHTML = `<span>${text}</span> ${!disabled ? '<i class="fa-solid fa-chevron-right text-[10px] text-gray-500"></i>' : ''}`;
+        if (!disabled) {
+            btn.onclick = () => {
+                playClick();
+                action();
+            };
+        } else {
+            btn.disabled = true;
+        }
+        btnContainer.appendChild(btn);
+    }
+
+
+    // PC Password Prompt
+    function promptPCWord() {
+        // Modal popup prompt fallback
+        const modal = document.createElement('div');
+        modal.className = "fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4";
+        modal.innerHTML = `
+            <div class="bg-gray-900 border border-blue-500 rounded-xl p-6 max-w-sm w-full text-center">
+                <h4 class="text-blue-400 font-bold mb-2"><i class="fa-solid fa-key mr-1"></i> 컴퓨터 비밀번호 입력</h4>
+                <p class="text-xs text-gray-400 mb-4">엄마의 관리자 권한을 가로채야 합니다. (힌트: 방안의 어딘가에 메모나 일기가 있을지도...)</p>
+                <input type="password" id="pc-pw-input" class="w-full bg-black text-lime-400 text-center font-mono py-2 rounded border border-gray-800 mb-4 focus:outline-none focus:border-blue-500" placeholder="Password">
+                <div class="flex gap-2">
+                    <button id="pc-cancel" class="flex-1 bg-gray-800 text-gray-300 py-2 rounded-lg text-xs hover:bg-gray-700">취소</button>
+                    <button id="pc-submit" class="flex-1 bg-blue-600 text-white py-2 rounded-lg text-xs hover:bg-blue-500 font-bold">인증하기</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        document.getElementById('pc-cancel').onclick = () => {
+            modal.remove();
+        };
+
+        document.getElementById('pc-submit').onclick = () => {
+            const val = document.getElementById('pc-pw-input').value;
+            modal.remove();
+            
+            // Password logic
+            if (val === '0512') {
+                playSuccess();
+                state.clues.pcHacked = true;
+                addLog("[해킹 성공] 컴퓨터 기밀 파일에 무사히 액세스했습니다! 엄마의 비공개 메신저 대화방의 자료를 복원했습니다.", "success");
+                addLog("[정보 해석] 엄마가 즐겨쓰는 이메일 비번이자 현관 마스터 번호는 '0512'로 보란 듯이 등록되어 있었습니다.", "success");
+                state.clues.phoneInterpreted = true;
+                updateStats();
             } else {
-                sound.setStaticLevel(0.015); // 일상적인 미세 잡음 복구
-                // 특정 확률로 기이한 현상(Anomaly) 발생
-                // 매 10초마다 확률 계산
-                if (state.secondTicks % 12 === 0) {
-                    triggerRandomAnomaly();
+                playBeep(120, 0.5);
+                state.suspicion += 10;
+                addLog("잘못된 비밀번호를 입력하여 붉은색 경고음이 작게 울렸습니다! (의심도 증가)", "danger");
+                updateStats();
+            }
+        };
+    }
+
+
+    // Door lock pin entry
+    function promptDoorPassword() {
+        const modal = document.createElement('div');
+        modal.className = "fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4";
+        modal.innerHTML = `
+            <div class="bg-gray-900 border border-red-500 rounded-xl p-6 max-w-sm w-full text-center">
+                <h4 class="text-red-500 font-bold mb-2"><i class="fa-solid fa-lock mr-1"></i> 도어락 비밀번호 입력</h4>
+                <p class="text-xs text-gray-400 mb-4">4자리 비밀번호를 신중하게 대입해 보십시오.</p>
+                <input type="text" maxlength="4" id="door-pw-input" class="w-full bg-black text-red-500 text-center text-xl font-mono py-3 rounded border border-gray-800 mb-4 tracking-widest focus:outline-none focus:border-red-500" placeholder="••••">
+                <div class="flex gap-2">
+                    <button id="door-cancel" class="flex-1 bg-gray-800 text-gray-300 py-2 rounded-lg text-xs hover:bg-gray-700">포기</button>
+                    <button id="door-submit" class="flex-1 bg-red-600 text-white py-2 rounded-lg text-xs hover:bg-red-500 font-bold">전송</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        document.getElementById('door-cancel').onclick = () => modal.remove();
+        
+        document.getElementById('door-submit').onclick = () => {
+            const pin = document.getElementById('door-pw-input').value;
+            modal.remove();
+            
+            advanceTime(5);
+            if (pin === '0512') {
+                // Check mechanical double cylinder
+                if (state.clues.safetyLimiterRemoved) {
+                    triggerEnding('escaped_perfect');
+                } else {
+                    addLog("도어락 비밀번호가 매끄럽게 승인되었습니다! 하지만 굳건한 하단 이중 자물쇠 실린더가 여전히 도어 프레임을 단단히 움켜쥐고 있습니다. 마스터 키가 필요합니다.", "danger");
                 }
-            }
-        }
-
-        // 무작위 변칙현상 발생 연출
-        function triggerRandomAnomaly() {
-            // 발생 가능한 변칙들의 풀
-            const pool = ['B2', 'HEATER', 'PHONE', 'VENT', 'FOOTSTEPS'];
-            const randomType = pool[Math.floor(Math.random() * pool.length)];
-            
-            state.anomalyActive = true;
-            state.activeAnomalyType = randomType;
-            state.anomalyTimer = state.anomalyDurationLimit;
-            state.securityLevel = 'WARNING';
-            
-            sound.playBeep(350, 0.4);
-            sound.playBeep(250, 0.4);
-
-            document.getElementById('danger-banner').classList.remove('hidden');
-            document.getElementById('security-level').innerText = "경고 (WARNING)";
-            document.getElementById('security-level').className = "text-xs font-bold text-amber-500 uppercase tracking-widest px-2 py-0.5 rounded border border-amber-800 bg-amber-950/40 crt-glow-amber";
-            
-            // UI 흔들림 활성화
-            document.getElementById('glitch-wrapper').classList.add('glitch-active');
-            setTimeout(() => {
-                document.getElementById('glitch-wrapper').classList.remove('glitch-active');
-            }, 600);
-
-            // 각 이벤트마다 다른 로깅 및 사전 처리
-            if (randomType === 'B2') {
-                appendLog("CAM-03(엘리베이터)에 알 수 없는 지하 주파수 및 붉은 전광 인자가 감지되었습니다. 엘리베이터 카드가 'B2'에서 정지해 있습니다.", "danger");
-                document.getElementById('alert-display').innerText = "CCTV 모니터를 확인하십시오. 제 3조와 연관된 엘리베이터 이탈 신호입니다.";
-                document.getElementById('cctv-alert').classList.remove('hidden');
-            } 
-            else if (randomType === 'HEATER') {
-                appendLog("CAM-02(2층 복도) 한가운데의 실온이 급격히 저하하며 비정상적인 열적 진공 상태와 기괴한 그림자가 관측됩니다.", "danger");
-                document.getElementById('alert-display').innerText = "복도의 한기가 위험 수위에 도달하고 있습니다. 수칙 제 2조를 확인하세요.";
-                document.getElementById('cctv-alert').classList.remove('hidden');
-            }
-            else if (randomType === 'PHONE') {
-                state.phoneIdle = false;
-                appendLog("경보: 침수 공실 [404호] 유선 루프로부터 착신 전화 신호가 수신되고 있습니다.", "danger");
-                document.getElementById('alert-display').innerText = "비상 수화 단계를 작동하십시오. 수칙 제 3조를 신속히 정독하십시오.";
+            } else {
+                state.frontDoorTries++;
+                state.suspicion += 15;
+                playBeep(100, 0.4);
+                addLog(`도어락 멜로디가 엇박자로 '삑삑- 삐비빅!' 경보음을 냅니다. 틀렸습니다! (의심도 +15)`, "danger");
                 
-                // 인터폰 제어 버튼들 한시적 활성화
-                document.getElementById('btn-phone-answer').disabled = false;
-                document.getElementById('btn-phone-answer').className = "px-3 py-1.5 bg-blue-900 hover:bg-blue-800 text-blue-300 rounded text-xs border border-blue-500 font-bold transition-all";
-                document.getElementById('phone-status').innerText = "호출 신호 중! (RINGING...)";
-                document.getElementById('phone-status').className = "text-xs font-mono px-2 py-0.5 rounded bg-red-950 text-red-500 border border-red-900 animate-pulse";
-                document.getElementById('control-alert').classList.remove('hidden');
-            }
-            else if (randomType === 'VENT') {
-                appendLog("관리실 천장 환풍구 기계 그릴 내부에서 유기체가 사포를 문지르는 듯한 극심한 파괴 소음이 귀밑까지 다가왔습니다.", "danger");
-                document.getElementById('alert-display').innerText = "빛을 소멸시키고 가만히 있으십시오! 즉시 수칙 제 4조에 의거하십시오.";
-                document.getElementById('control-alert').classList.remove('hidden');
-            }
-            else if (randomType === 'FOOTSTEPS') {
-                appendLog("관리동 정문 바깥에서 미세하지만 찰랑거리는 물 웅덩이를 질질 끄는 기이한 발소리가 감지되었습니다.", "danger");
-                document.getElementById('alert-display').innerText = "가장 원시적이고 원초적인 접근 신호입니다. 수칙 제 5조를 확인하십시오.";
-                document.getElementById('control-alert').classList.remove('hidden');
-            }
-        }
-
-        // 변칙현상의 해결 상태 실시간 추적 확인
-        function checkAnomalyResolution() {
-            if (state.activeAnomalyType === 'HEATER') {
-                // 히터가 켜졌다면 해결 완료
-                if (state.heaterOn) {
-                    resolveAnomaly("복도의 온도가 온수 순환식 히터 가동으로 인해 급증했습니다. 한기가 제거되고 그림자가 흔적 없이 소멸했습니다.");
+                if (state.frontDoorTries >= 3) {
+                    addLog("지속적인 비밀번호 입력 오류로 인해 1분간 도어락이 셧다운 경보를 울립니다! 거실에 있던 엄마의 격양이 즉시 도달합니다!", "danger");
+                    state.suspicion = 100;
                 }
+                updateStats();
             }
-            else if (state.activeAnomalyType === 'PHONE') {
-                // 전화를 받고 + 얌전히 버틴 상태에서 제한시간의 절반 이상(수립 후 침묵으로 5초 경과) 흐르면 생존
-                if (state.phoneAnswered && state.anomalyTimer <= 5) {
-                    resolveAnomaly("수화기 너머에서 찢어질 듯한 이갈이 소리와 물방울 흐르는 음침한 소리가 나다가, 결국 회선 침묵을 견디지 못하고 지지직거리며 통화가 해제되었습니다.");
-                }
-            }
-            else if (state.activeAnomalyType === 'VENT') {
-                // 모니터가 차단된 지 7초가 경과했고, 마우스를 안 움직였다면 자동 해제
-                if (!state.monitorOn && state.anomalyTimer <= 7) {
-                    resolveAnomaly("천장의 덜거덕거리던 가죽 같은 형체가 사방의 정적과 절대 암흑을 마주한 채 웅얼거리며 정화실 복관 통로로 미끄러져 돌아갔습니다.");
-                }
-            }
-        }
+        };
+    }
 
-        // 변칙 대처 성공 시 복구 절차
-        function resolveAnomaly(msg) {
-            state.anomalyActive = false;
-            state.activeAnomalyType = null;
-            state.securityLevel = 'SAFE';
-            
-            sound.playBeep(900, 0.1);
-            sound.playBeep(1100, 0.15);
 
-            document.getElementById('danger-banner').classList.add('hidden');
-            document.getElementById('security-level').innerText = "안전 (SAFE)";
-            document.getElementById('security-level').className = "text-xs font-bold text-emerald-400 uppercase tracking-widest px-2 py-0.5 rounded border border-emerald-800 bg-emerald-950/40";
-            
-            document.getElementById('cctv-alert').classList.add('hidden');
-            document.getElementById('control-alert').classList.add('hidden');
-            document.getElementById('alert-display').innerText = "기현상 대처 성공. 주변 환경 데이터가 청정 수준으로 초기화되었습니다.";
-            
-            // 404호 버튼 리셋
-            if (state.phoneAnswered || !state.phoneIdle) {
-                state.phoneAnswered = false;
-                state.phoneIdle = true;
-                const status = document.getElementById('phone-status');
-                const btnAnswer = document.getElementById('btn-phone-answer');
-                const btnSpeak = document.getElementById('btn-phone-speak');
+    // Lockpicking Minigame (Spacebar / Timing Action)
+    function startLockpickingGame() {
+        if (!hasItem('bobby_pin')) return;
+        
+        document.getElementById('lockpick-game').classList.remove('hidden');
+        state.lockpickSuccesses = 0;
+        document.getElementById('lockpick-success-count').textContent = `0 / 3`;
+        
+        state.cursorPos = 0;
+        state.cursorDir = 1;
+        
+        // Randomize Safe Zone location
+        const safeZone = document.getElementById('lockpick-safezone');
+        const randomLeft = Math.floor(Math.random() * 50) + 15; // 15% to 65%
+        safeZone.style.left = `${randomLeft}%`;
+
+        // Start animation frame loop
+        if (state.lockpickTimer) clearInterval(state.lockpickTimer);
+        
+        state.lockpickTimer = setInterval(() => {
+            state.cursorPos += state.cursorSpeed * state.cursorDir;
+            if (state.cursorPos >= 100) {
+                state.cursorPos = 100;
+                state.cursorDir = -1;
+            } else if (state.cursorPos <= 0) {
+                state.cursorPos = 0;
+                state.cursorDir = 1;
+            }
+            document.getElementById('lockpick-cursor').style.left = `${state.cursorPos}%`;
+        }, 16); // ~60fps
+    }
+
+    function strikeLockpick() {
+        if (!state.lockpickTimer) return;
+        
+        const cursor = state.cursorPos;
+        const safeZone = document.getElementById('lockpick-safezone');
+        const safeLeft = parseFloat(safeZone.style.left);
+        const safeWidth = 12; // 12% width
+        const safeRight = safeLeft + safeWidth;
+
+        if (cursor >= safeLeft && cursor <= safeRight) {
+            // Success hit
+            state.lockpickSuccesses++;
+            playBeep(600, 0.1);
+            addLog(`탁! 실린더의 기어 구조 하나가 들어맞았습니다. (${state.lockpickSuccesses}/3)`, "success");
+            document.getElementById('lockpick-success-count').textContent = `${state.lockpickSuccesses} / 3`;
+
+            // Randomize safe zone for next pin stage
+            const randomLeft = Math.floor(Math.random() * 50) + 15;
+            safeZone.style.left = `${randomLeft}%`;
+            state.cursorSpeed += 0.5; // Increase speed
+
+            if (state.lockpickSuccesses >= 3) {
+                clearInterval(state.lockpickTimer);
+                state.lockpickTimer = null;
+                document.getElementById('lockpick-game').classList.add('hidden');
                 
-                status.innerText = "대기 중 (IDLE)";
-                status.className = "text-xs font-mono px-2 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800";
-                btnAnswer.disabled = true;
-                btnSpeak.disabled = true;
-                btnSpeak.className = "w-full py-1 bg-red-950/20 text-red-900/40 border border-red-950/30 rounded text-xs font-bold font-mono";
+                // Door Open Success!
+                state.roomDoorUnlocked = true;
+                playSuccess();
+                addLog("덜컥! 하는 청량한 해방의 금속음과 함께 방문의 자물쇠가 마침내 풀렸습니다! 복도로 나갈 수 있는 틈이 확보되었습니다.", "success");
+                
+                // Switch button options & change location dynamically
+                changeLocation('hallway');
             }
+        } else {
+            // Failed hit - noise
+            playBeep(100, 0.3);
+            state.suspicion += 12;
+            addLog("삐끗! 핀이 미끄러지며 날카로운 마찰 소음이 납니다. 엄마가 신경을 곤두세웁니다. (의심도 +12)", "danger");
+            updateStats();
+        }
+    }
 
-            appendLog(msg, "success");
+    function closeMinigame() {
+        if (state.lockpickTimer) {
+            clearInterval(state.lockpickTimer);
+            state.lockpickTimer = null;
+        }
+        document.getElementById('lockpick-game').classList.add('hidden');
+    }
+
+    // Keyboard support for spacebar on lockpicking
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' && state.lockpickTimer) {
+            e.preventDefault();
+            strikeLockpick();
+        }
+    });
+
+
+    // Change Locations (My Room <-> Hallway)
+    function changeLocation(newLoc) {
+        state.location = newLoc;
+        const title = document.getElementById('location-title');
+        const status = document.getElementById('room-status');
+        const mapRoom = document.getElementById('map-room');
+        const mapHall = document.getElementById('map-hallway');
+
+        if (newLoc === 'room') {
+            title.textContent = "내 방 (Safe Base)";
+            status.textContent = state.roomDoorUnlocked ? "방문이 개방됨" : "문이 잠겨있음";
+            status.className = "text-xs px-2 py-1 bg-teal-950 text-teal-400 rounded-full border border-teal-900/50";
+            mapRoom.classList.remove('hidden');
+            mapHall.classList.add('hidden');
+            addLog("익숙하지만 질식할 것 같았던 자신의 방으로 다시 숨어들었습니다.", "neutral");
+            inspectElement('bed');
+        } else if (newLoc === 'hallway') {
+            title.textContent = "바깥 복도 및 거실 (Danger Zone)";
+            status.textContent = "침묵 정숙 유지 요망";
+            status.className = "text-xs px-2 py-1 bg-red-950 text-red-500 rounded-full border border-red-900/50 animate-pulse";
+            mapRoom.classList.add('hidden');
+            mapHall.classList.remove('hidden');
+            addLog("조심스럽게 발소리를 죽여 거실 복도로 발을 내디뎠습니다. 사방에 엄마의 체취와 살벌한 분위기가 가득합니다.", "neutral");
+            inspectElement('hall-bathroom');
+
+            // Trigger Shower Schedule Automatically if time matches
+            if (state.time.hour === 14 && state.time.minute >= 30 && !state.clues.momShowerTriggered) {
+                state.clues.momShowerTriggered = true;
+                addLog("[골든 타임] 욕실 너머로 거센 샤워기 물소리가 들려오기 시작합니다! 엄마가 샤워를 끝마치기 전까지 활동 반경이 크게 트였습니다!", "success");
+            }
+        }
+    }
+
+
+    // Inventory Helpers
+    function acquireItem(key) {
+        if (state.inventory.includes(key)) return;
+        state.inventory.push(key);
+        playBeep(440, 0.15);
+        playBeep(880, 0.2);
+
+        // Remove empty placeholder
+        const emptyMsg = document.getElementById('empty-inventory-msg');
+        if (emptyMsg) emptyMsg.remove();
+
+        const container = document.getElementById('inventory-container');
+        const itemData = ITEM_TEMPLATES[key];
+
+        const itemNode = document.createElement('div');
+        itemNode.className = `flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold shadow ${itemData.color} transition-all duration-300 transform scale-95 hover:scale-100`;
+        itemNode.innerHTML = `<i class="${itemData.icon}"></i> ${itemData.name}`;
+        itemNode.title = itemData.desc;
+        container.appendChild(itemNode);
+
+        addLog(`소지품 획득: [${itemData.name}] - ${itemData.desc}`, "success");
+    }
+
+    function hasItem(key) {
+        return state.inventory.includes(key);
+    }
+
+
+    // Custom Log Feed Screen
+    function addLog(text, type = 'neutral') {
+        const logFeed = document.getElementById('story-log');
+        const logEntry = document.createElement('div');
+        
+        let borderCls = 'border-gray-800';
+        let textCls = 'text-gray-400';
+        if (type === 'success') {
+            borderCls = 'border-teal-500';
+            textCls = 'text-teal-300';
+        } else if (type === 'danger') {
+            borderCls = 'border-red-600';
+            textCls = 'text-red-400 font-bold';
+        } else if (type === 'system') {
+            borderCls = 'border-blue-500';
+            textCls = 'text-blue-300 italic';
         }
 
-        // 시간 제한 만료 시 즉사 판정 트리거
-        function handleAnomalyTimeout() {
-            if (state.activeAnomalyType === 'B2') {
-                triggerGameOver("지침 제1조 불이행: 엘리베이터가 존재하지 않는 지하 2층의 습축 기류와 맞닿은 후 오랜 시간 당신의 모니터 시선에 방치되었습니다. 문 너머에서 흙탕물을 흘리며 쏟아진 무수한 손가락들이 이미 관리실 정면 유리창에 들러붙었습니다.");
-            }
-            else if (state.activeAnomalyType === 'HEATER') {
-                triggerGameOver("지침 제2조 불이행: 복도의 그림자가 극한의 한기 속에서 힘을 증폭했습니다. 문턱 아래 찬기가 스며들기 시작하더니, 정수리보다 높은 검은 형체가 경비실 전면 도어를 박살 내고 당신의 가슴팍을 덮쳤습니다.");
-            }
-            else if (state.activeAnomalyType === 'PHONE') {
-                triggerGameOver("지침 제3조 불이행: 공실 404호의 전화를 수신 거부하거나 수화기를 방치했습니다. 신호 회선이 합선되며 가청 주파수를 타고 올라온 기괴한 영적 고주파음이 관리인의 고막과 뇌 피질을 완전히 녹여 버렸습니다.");
-            }
-            else if (state.activeAnomalyType === 'VENT') {
-                triggerGameOver("지침 제4조 불이행: 천장의 미끄러지는 거칠고 검은 무게를 감지했음에도 빛을 끄지 않았거나 서둘러 움직였습니다. 당신을 향해 무너지듯 낙하한 젖은 피부의 존재에 휘감겼습니다.");
-            }
-            else if (state.activeAnomalyType === 'FOOTSTEPS') {
-                triggerGameOver("지침 제5조 불이행: 문턱 너머에서 발소리가 들리는 상황에서 방출 스피커를 사용해 상대를 교란시키지 않았습니다. 비바람 부는 새벽, 노크 소리가 채 들리기도 전에 문 밑틈새에서 거꾸로 된 사람 얼굴이 미끄러져 들어와 당신을 응시합니다.");
-            }
+        const formatMin = state.time.minute < 10 ? '0' + state.time.minute : state.time.minute;
+        const timeStr = `${state.time.hour > 12 ? '오후' : '오전'} ${state.time.hour > 12 ? state.time.hour-12 : state.time.hour}:${formatMin}`;
+
+        logEntry.className = `leading-relaxed border-l-2 ${borderCls} pl-3 py-0.5 transition-all duration-300`;
+        logEntry.innerHTML = `
+            <span class="text-[10px] text-gray-500 block">${timeStr}</span>
+            <span class="${textCls}">${text}</span>
+        `;
+
+        logFeed.appendChild(logEntry);
+        // Scroll to bottom
+        logFeed.scrollTop = logFeed.scrollHeight;
+    }
+
+    // Custom non-blocking Toast feedback
+    function showToast(message) {
+        const toast = document.getElementById('toast');
+        const msgNode = document.getElementById('toast-message');
+        msgNode.textContent = message;
+        
+        toast.style.opacity = '1';
+        toast.style.pointerEvents = 'auto';
+
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.pointerEvents = 'none';
+        }, 3500);
+    }
+
+    // Interact with object to hide during footsteps alert
+    function interactWithObject(object, action) {
+        if (action === 'hide') {
+            state.isHiding = true;
+            state.hidingLocation = object;
+            clearInterval(state.footstepTimer);
+            checkFootstepResolution();
         }
+    }
 
-        // 게임 오버 연출
-        function triggerGameOver(reason) {
-            state.gameActive = false;
-            sound.playBeep(120, 0.8);
-            sound.setStaticLevel(0.3);
+    // Real-time loop ticking for minor events
+    function startTickSystem() {
+        setInterval(() => {
+            // Passive tension ticks if no action is happening
+            if (state.location === 'hallway' && !state.clues.momShowerTriggered) {
+                // Highly risky to stand in hallway!
+                state.suspicion += 3;
+                updateStats();
+            }
+        }, 4000);
+    }
 
-            document.getElementById('gameover-desc').innerHTML = reason;
-            document.getElementById('gameover-screen').classList.remove('hidden');
+
+    // Multiverse Endings Dispatcher
+    function triggerEnding(endingKey) {
+        clearInterval(state.footstepTimer);
+        if (state.lockpickTimer) clearInterval(state.lockpickTimer);
+
+        const screen = document.getElementById('ending-screen');
+        const title = document.getElementById('ending-title');
+        const desc = document.getElementById('ending-desc');
+        const icon = document.getElementById('ending-icon');
+
+        screen.classList.remove('hidden');
+
+        switch (endingKey) {
+            case 'caught_mom':
+                icon.innerHTML = '<i class="fa-solid fa-skull-crossbones text-red-600"></i>';
+                title.textContent = "엄마에게 체포되었습니다.";
+                desc.innerHTML = `
+                    <strong>[BAD ENDING - 영구 구속]</strong><br><br>
+                    "너 방안에서 도대체 무슨 짓을 벌이고 있는 거니?!"<br>
+                    차갑게 고정된 엄마의 감시망을 피하지 못했습니다. 당신이 수집했던 조각들이 발각되었습니다. 
+                    당신은 더 이상 어떠한 외부 활동도 허락받지 못하고 전자기기를 영원히 몰수당한 채 하루 18시간 공부 형벌에 처해집니다.
+                `;
+                break;
+            
+            case 'caught_hallway':
+                icon.innerHTML = '<i class="fa-solid fa-gavel text-orange-600"></i>';
+                title.textContent = "복도에서 현행범 포획";
+                desc.innerHTML = `
+                    <strong>[BAD ENDING - 신뢰 파탄]</strong><br><br>
+                    복도를 헤매던 중 거실 코너를 돌던 엄마의 형체와 정면으로 마주쳤습니다.<br>
+                    "너... 문이 어떻게 열려 있어? 공부 안 하고 지금 어딜 기어 나와?!"<br>
+                    해명할 틈도 없이 엄마는 가사 도구를 내려놓고 당신의 머리채를 잡아 방으로 집어던졌습니다. 방문에는 쇠사슬이 덧대어졌습니다.
+                `;
+                break;
+
+            case 'mental_breakdown':
+                icon.innerHTML = '<i class="fa-solid fa-heart-crack text-blue-500"></i>';
+                title.textContent = "자아의 상실 (멘탈 붕괴)";
+                desc.innerHTML = `
+                    <strong>[SAD ENDING - 순종적인 복종]</strong><br><br>
+                    가슴을 억누르는 폐소공포와 가스라이팅, 엄마의 수많은 통제적 시선의 중압감을 견디지 못했습니다.<br>
+                    "그래... 내가 도대체 밖에서 뭘 하겠어... 엄마 말이 다 맞아."<br>
+                    당신은 탈출 계획을 스스로 포기하고 도구들을 쓰레기통에 폐기했습니다. 무기력함에 눈을 감고, 엄마가 설계한 무채색 삶을 받아들여 살아갑니다.
+                `;
+                break;
+
+            case 'jump_window':
+                icon.innerHTML = '<i class="fa-solid fa-person-falling text-amber-500 animate-bounce"></i>';
+                title.textContent = "부서진 비행 (창문 탈출 시도)";
+                desc.innerHTML = `
+                    <strong>[ACCIDENT ENDING - 미완의 뼈마디]</strong><br><br>
+                    나사를 풀어낸 이중창을 힘껏 열어젖히고 아슬아슬하게 아래를 굽어보았습니다. 시원한 밤공기가 뺨을 스쳤습니다.<br>
+                    "지금이 아니면 안 돼!" 가스 배관을 향해 의기양양하게 몸을 실었으나, 빗물에 미끄러져 3층 높이에서 아래 주차장 수풀로 낙하하고 말았습니다!<br>
+                    발목과 갈비뼈가 부서지는 둔탁한 소리가 단지를 울립니다. 탈출은 성공했지만, 구급차 사이렌 소리와 엄마의 분노한 외침이 귀에 꽂힙니다.
+                `;
+                break;
+
+            case 'escaped_perfect':
+                icon.innerHTML = '<i class="fa-solid fa-cloud-sun text-teal-400"></i>';
+                title.textContent = "해방의 새벽 (완벽한 가출)";
+                desc.innerHTML = `
+                    <strong>[TRUE ENDING - 나의 첫 발자국]</strong><br><br>
+                    비밀번호를 입력하고 이중 자물쇠를 돌린 순간, '티리링'하는 감미로운 효과음과 함께 육중한 철제 현관문이 완전히 열렸습니다.<br>
+                    집 밖 아스팔트 바닥에 비친 가로등 불빛이 자유의 꽃길처럼 놓여 있습니다.<br>
+                    당신은 가방을 고쳐 매고 뒤도 돌아보지 않은 채 멀리 정류장으로 전력 질주합니다. 드디어 차디찬 감옥을 깨뜨리고, 자신의 진짜 첫걸음을 시작합니다. 자유입니다!
+                `;
+                break;
         }
+    }
 
-        // 승리 퇴근 연출
-        function triggerVictory() {
-            state.gameActive = false;
-            sound.setStaticLevel(0);
-            document.getElementById('victory-screen').classList.remove('hidden');
-        }
+    // Reset whole game
+    function resetGame() {
+        state.location = 'room';
+        state.suspicion = 10;
+        state.mental = 100;
+        state.time = { hour: 14, minute: 0 };
+        state.inventory = [];
+        state.clues = {
+            bobbyPinFound: false,
+            screwdiverFound: false,
+            diaryRead: false,
+            pcHacked: false,
+            livingRoomInspected: false,
+            momShowerTriggered: false,
+            phoneInterpreted: false,
+            safePasswordFound: false,
+            safetyLimiterRemoved: false
+        };
+        state.isHiding = false;
+        state.hidingLocation = null;
+        state.roomDoorUnlocked = false;
+        state.frontDoorTries = 0;
+        state.ticksToNextFootstep = 8;
 
-        // 근무 재시작
-        function restartGame() {
-            // 모든 상태 리셋
-            state.gameActive = true;
-            state.currentTime = { hour: 0, min: 0 };
-            state.securityLevel = 'SAFE';
-            state.anomalyActive = false;
-            state.activeAnomalyType = null;
-            state.anomalyTimer = 0;
-            state.secondTicks = 0;
-            state.heaterOn = false;
-            state.phoneAnswered = false;
-            state.phoneIdle = true;
-            state.monitorOn = true;
-            state.cam3ShutterClosed = false;
+        clearInterval(state.footstepTimer);
+        closeMinigame();
 
-            // UI 리셋
-            document.getElementById('gameover-screen').classList.add('hidden');
-            document.getElementById('victory-screen').classList.add('hidden');
-            document.getElementById('danger-banner').classList.add('hidden');
-            document.getElementById('blackout-screen').classList.add('hidden');
-            
-            // 시계/보안 라벨 원상복구
-            document.getElementById('game-clock').innerText = "00:00 AM";
-            document.getElementById('security-level').innerText = "안전 (SAFE)";
-            document.getElementById('security-level').className = "text-xs font-bold text-emerald-400 uppercase tracking-widest px-2 py-0.5 rounded border border-emerald-800 bg-emerald-950/40";
-            
-            // 컨트롤 패널 상태 리셋
-            document.getElementById('heater-status').innerText = "꺼짐 (OFF)";
-            document.getElementById('heater-status').className = "text-xs font-mono px-2 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800";
-            document.getElementById('btn-heater').innerText = "스위치 ON";
-            document.getElementById('btn-heater').className = "px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded text-xs border border-zinc-700 transition-all font-bold";
-            
-            document.getElementById('phone-status').innerText = "대기 중 (IDLE)";
-            document.getElementById('phone-status').className = "text-xs font-mono px-2 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800";
-            document.getElementById('btn-phone-answer').disabled = true;
-            document.getElementById('btn-phone-answer').className = "px-3 py-1.5 bg-zinc-900 text-zinc-600 rounded text-xs border border-zinc-800 font-bold cursor-not-allowed";
-            document.getElementById('btn-phone-speak').disabled = true;
-            
-            document.getElementById('btn-monitor').innerText = "모니터 OFF";
-            document.getElementById('monitor-status').innerText = "출력 중 (ONLINE)";
-            document.getElementById('monitor-status').className = "text-xs font-mono px-2 py-0.5 rounded bg-emerald-950/30 text-emerald-400 border border-emerald-900/50";
-            
-            document.getElementById('btn-cam3-shutter').innerText = "CLOSE STREAM";
-            document.getElementById('btn-cam3-shutter').className = "px-2 py-0.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded text-[9px] border border-zinc-800 font-bold uppercase";
-            document.getElementById('cam3-dot').className = "w-1.5 h-1.5 rounded-full bg-emerald-500";
+        document.getElementById('ending-screen').classList.add('hidden');
+        document.getElementById('footstep-alert').classList.add('hidden');
+        document.getElementById('inventory-container').innerHTML = `<span id="empty-inventory-msg" class="text-xs text-gray-600 italic">가방이 비어있습니다. 방안의 사물을 꼼꼼히 조사하세요.</span>`;
 
-            document.getElementById('log-container').innerHTML = '';
-            
-            // 오디오 리빌드
-            sound.init();
-            sound.playBeep(1000, 0.2);
-            
-            appendLog("새 야간 근무 일지가 할당되었습니다. 시스템 재접속 성공.", "success");
-            
-            // 첫 화면 복귀
-            switchTab('tab-control');
-        }
-    </script>
+        // Clear log feeds
+        const feed = document.getElementById('story-log');
+        feed.innerHTML = `
+            <div class="text-gray-400 leading-relaxed border-l-2 border-red-500 pl-3">
+                <span class="text-xs text-gray-500 block">오후 02:00</span>
+                엄마가 문을 잠그고 떠났습니다. 다시 긴장의 끈을 늦출 수 없는 수색을 가동하십시오.
+            </div>
+        `;
+
+        updateStats();
+        changeLocation('room');
+    }
+
+    // Initial load setup
+    window.onload = function() {
+        updateStats();
+    };
+
+</script>
 </body>
 </html>
